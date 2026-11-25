@@ -13,17 +13,39 @@ function calculateRisk(stats) {
     const drainage = clamp(Number(stats.drainage) || 0, 0, 100);
     const green = clamp(Number(stats.green) || 0, 0, 100);
 
-    // This formula matches EcoQuest's existing updateEnvironment().
     const rainfallEffect = rainfall * 0.65;
     const greenEffect = (100 - green) * 0.20;
     const drainageEffect = (100 - drainage) * 0.15;
 
+    const localRisk =
+        rainfallEffect + greenEffect + drainageEffect;
+
+    // Match the game's geographic modifier from the selected
+    // historical susceptibility map area. This is not a live
+    // XGBoost prediction for the current game state.
+    const selectedArea = stats.selectedMLArea || null;
+    let susceptibilityIndex = null;
+    let susceptibilityMultiplier = 1;
+
+    if (selectedArea) {
+        const meanScore = clamp(
+            Number(selectedArea.mean_score) || 0,
+            0,
+            1
+        );
+
+        const highShare = clamp(
+            (Number(selectedArea.high_very_high_pct) || 0) / 100,
+            0,
+            1
+        );
+
+        susceptibilityIndex = (meanScore + highShare) / 2;
+        susceptibilityMultiplier = 0.5 + susceptibilityIndex;
+    }
+
     const risk = clamp(
-        Math.round(
-            rainfallEffect +
-            greenEffect +
-            drainageEffect
-        ),
+        Math.round(localRisk * susceptibilityMultiplier),
         0,
         100
     );
@@ -44,11 +66,15 @@ function calculateRisk(stats) {
 
     return {
         risk,
+        localRisk: clamp(Math.round(localRisk), 0, 100),
         level,
         color,
         rainfall,
         drainage,
         green,
+        selectedArea,
+        susceptibilityIndex,
+        susceptibilityMultiplier,
         factors: [
             {
                 name: 'Heavy rainfall',
@@ -68,7 +94,6 @@ function calculateRisk(stats) {
         ].sort((a, b) => b.points - a.points)
     };
 }
-
 function getRecommendations(result) {
 
     const recommendations = [];
@@ -88,6 +113,12 @@ function getRecommendations(result) {
     if (result.rainfall >= 50) {
         recommendations.push(
             'Prepare for heavy rainfall and monitor flood risk.'
+        );
+    }
+
+    if (result.susceptibilityIndex !== null && result.susceptibilityIndex >= 0.7) {
+        recommendations.push(
+            'This selected Upazila has high historical susceptibility. Prioritize drainage and green infrastructure.'
         );
     }
 
@@ -120,7 +151,8 @@ function projectAction(stats, action) {
     const next = {
         rainfall: stats.rainfall,
         drainage: stats.drainage,
-        green: stats.green
+        green: stats.green,
+        selectedMLArea: stats.selectedMLArea || null
     };
 
     if (action === 'drainage') {
@@ -128,8 +160,8 @@ function projectAction(stats, action) {
     }
 
     if (action === 'trees') {
-        // Hypothetical increase equivalent to five oak trees.
-        next.green = Math.min(100, next.green + 15);
+        // One Oak Tree adds 3 green points in the actual game tools.
+        next.green = Math.min(100, next.green + 3);
     }
 
     return calculateRisk(next);
@@ -311,6 +343,43 @@ export function createEnvironmentAssistant({ getStats }) {
                  line-height: 1.6;
              }
 
+             .eco-ai-area-context {
+                 margin: 10px 0;
+                 padding: 9px;
+                 border: 1px solid #456b53;
+                 border-radius: 7px;
+                 background: #ffffff0b;
+                 color: #dceee0;
+                 font-size: 10px;
+                 line-height: 1.6;
+             }
+
+             .eco-ai-area-context strong {
+                 color: #a9e4af;
+             }
+
+             .eco-ai-apply-row {
+                 display: flex;
+                 gap: 6px;
+                 flex-wrap: wrap;
+                 margin-top: 7px;
+             }
+
+             .eco-ai-apply {
+                 cursor: pointer;
+                 padding: 8px;
+                 border: 1px solid #9baf70;
+                 border-radius: 7px;
+                 color: #102417;
+                 background: #b8d88a;
+                 font-size: 10px;
+                 font-weight: 800;
+             }
+
+             .eco-ai-apply:hover {
+                 background: #d0e8a8;
+             }
+
              .eco-ai-note {
                  margin-top: 11px;
                  color: #aabdb1;
@@ -363,13 +432,31 @@ export function createEnvironmentAssistant({ getStats }) {
                      type="button"
                      class="eco-ai-action"
                      data-scenario="drainage"
-                 >🚰 +15 Drainage</button>
+                 >Preview +15 Drainage</button>
 
                  <button
                      type="button"
                      class="eco-ai-action"
                      data-scenario="trees"
-                 >🌳 +15 Green Score</button>
+                 >Preview +3 Green (1 Oak)</button>
+             </div>
+
+             <div class="eco-ai-section">
+                 🎮 Apply a Game Action
+             </div>
+
+             <div class="eco-ai-apply-row">
+                 <button
+                     type="button"
+                     class="eco-ai-apply"
+                     data-apply-action="drainage"
+                 >Apply Drainage (20 credits)</button>
+
+                 <button
+                     type="button"
+                     class="eco-ai-apply"
+                     data-apply-action="trees"
+                 >Select Oak Tree (8 credits)</button>
              </div>
 
              <div
@@ -381,9 +468,11 @@ export function createEnvironmentAssistant({ getStats }) {
              </div>
 
              <p class="eco-ai-note">
-                 Educational rule-based estimate only.
-                 Not a trained AI prediction or real-world flood forecast.
-                 What-if buttons do not spend credits or modify the city.
+                 Game risk is a transparent simulation of rainfall, greenery and drainage,
+                 adjusted by the selected Upazila's historical susceptibility layer.
+                 The XGBoost classifier predicts its historical 2022 target from 11
+                 geospatial features; it is not a live flood forecast. Preview buttons
+                 do not change the city. Apply buttons use the actual game controls.
              </p>
          </div>
      `;
@@ -429,8 +518,21 @@ export function createEnvironmentAssistant({ getStats }) {
                  ></div>
              </div>
 
+             ${result.selectedArea ? \`
+             <div class="eco-ai-area-context">
+                 <strong>Historical susceptibility context</strong><br>
+                 ${escapeHtml(result.selectedArea.upazila)}, ${escapeHtml(result.selectedArea.district)}<br>
+                 Mean susceptibility: ${(Number(result.selectedArea.mean_score) * 100).toFixed(2)}%<br>
+                 High + Very High area: ${Number(result.selectedArea.high_very_high_pct).toFixed(2)}%<br>
+                 Game modifier: ${result.susceptibilityMultiplier.toFixed(2)}×
+             </div>
+             \` : \`
+             <div class="eco-ai-area-context">
+                 No Upazila selected. The game is using local simulated conditions only.
+             </div>
+             \`}
              <div class="eco-ai-section">
-                 📊 Why is risk increasing?
+                 📊 Local simulation drivers
              </div>
 
              ${result.factors.map(factor => `
@@ -469,10 +571,10 @@ export function createEnvironmentAssistant({ getStats }) {
             projection.innerHTML = `
                  <strong>${label}</strong>
                  <div>
-                     Current risk: ${result.risk}%
+                     Current game risk: ${result.risk}%
                  </div>
                  <div>
-                     Projected risk:
+                     Projected game risk:
                      <strong>${future.risk}%</strong>
                  </div>
                  <div style="color:#9fe8ae">
@@ -494,6 +596,52 @@ export function createEnvironmentAssistant({ getStats }) {
             selectedScenario = button.dataset.scenario;
 
             update();
+        });
+    });
+
+    // ========================================================
+    // APPLY REAL GAME ACTIONS THROUGH EXISTING GAME CONTROLS
+    // ========================================================
+
+    panel.querySelectorAll('[data-apply-action]').forEach(button => {
+
+        button.addEventListener('click', () => {
+
+            const action = button.dataset.applyAction;
+            const before = getStats();
+
+            if (action === 'drainage') {
+                const control = document.querySelector('[data-action="drainage"]');
+
+                if (!control) {
+                    projection.textContent = 'Drainage control is unavailable.';
+                    return;
+                }
+
+                control.click();
+
+                const after = getStats();
+                selectedScenario = null;
+
+                projection.textContent = after.drainage > before.drainage
+                    ? 'Drainage improved by 15 points. The game risk has been recalculated.'
+                    : 'Drainage did not change. Check available credits or whether drainage is already at maximum.';
+                update();
+                return;
+            }
+
+            if (action === 'trees') {
+                const control = document.querySelector('[data-tool="oak"]');
+
+                if (!control) {
+                    projection.textContent = 'Oak Tree tool is unavailable.';
+                    return;
+                }
+
+                control.click();
+                selectedScenario = null;
+                projection.textContent = 'Oak Tree selected. Click an empty city tile to plant it. The green score and game risk will update after placement.';
+            }
         });
     });
 
