@@ -1,0 +1,44 @@
+{
+    "project": "EcoQuest",
+    "model": "XGBoost Classifier",
+    "version": "3.4.1",
+    "training_samples": 20000,
+    "features": [
+        "elev",
+        "hand",
+        "slope",
+        "curv",
+        "twi",
+        "sti",
+        "dist",
+        "dd",
+        "rain",
+        "lulc",
+        "soil"
+    ],
+    "target": "y",
+    "target_definition": "2022 flood fraction >= 0.50",
+    "spatial_validation": "GroupKFold by 10 km block",
+    "validation_folds": 5,
+    "parameters": {
+        "n_estimators": 300,
+        "max_depth": 5,
+        "learning_rate": 0.05,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "min_child_weight": 5,
+        "reg_lambda": 1.0,
+        "n_jobs": -1,
+        "random_state": 42,
+        "eval_metric": "logloss",
+        "tree_method": "hist",
+        "device": "cuda"
+    },
+    "mean_spatial_cv": {
+        "auc": 0.9537596989435018,
+        "accuracy": 0.8832000284381202,
+        "kappa": 0.7658035712556371,
+        "f1": 0.8859121991558995,
+        "brier": 0.08405445351958446
+    }
+}

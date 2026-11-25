@@ -1,0 +1,801 @@
+﻿========== ML MAP HTML ==========
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EcoQuest | ML Flood Susceptibility Map</title>
+</head>
+<body>
+<script type="module" src="/src/ml-map.js"></script>
+</body>
+</html>
+
+========== ML MAP JAVASCRIPT ==========
+
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+import {
+    getHealth,
+    getAllUpazilas,
+    getFloodGeoJSON,
+    getThresholds
+} from "./ml-risk.js";
+
+const $ = (id) => document.getElementById(id);
+
+const COLORS = {
+    "Low": "#27ae60",
+    "Moderate": "#f1c40f",
+    "High": "#e67e22",
+    "Very High": "#e74c3c"
+};
+
+let map = null;
+let geoLayer = null;
+let allRecords = [];
+let thresholds = null;
+
+function category(score) {
+    if (score <= thresholds.Low_Max) return "Low";
+    if (score <= thresholds.Moderate_Max) return "Moderate";
+    if (score <= thresholds.High_Max) return "High";
+    return "Very High";
+}
+
+function percentage(value) {
+    return Number(value ?? 0).toFixed(2) + "%";
+}
+
+function createLayout() {
+    document.body.style.margin = "0";
+    document.body.style.background = "#0b1714";
+    document.body.style.color = "#eef7ef";
+    document.body.style.fontFamily = "Arial, sans-serif";
+
+    document.body.innerHTML = `
+    <div class="eco-header">
+      <div>
+        <h2>ðŸŒ EcoQuest Flood Intelligence</h2>
+        <p>Sylhet Division â€¢ XGBoost Flood Susceptibility</p>
+      </div>
+      <a href="/" class="eco-back">Back to Game</a>
+    </div>
+
+    <div class="eco-toolbar">
+      <select id="district-filter">
+        <option value="">All Districts</option>
+      </select>
+
+      <select id="upazila-filter">
+        <option value="">Select Upazila</option>
+      </select>
+
+      <button id="reset-map">Reset Map</button>
+      <span id="api-status">Connecting to ML backend...</span>
+    </div>
+
+    <div class="eco-main">
+      <div id="ml-map"></div>
+
+      <aside id="ml-details">
+        <h3>ML Flood Susceptibility</h3>
+        <p>Select an Upazila on the map to view its data.</p>
+      </aside>
+    </div>
+
+    <div class="eco-legend">
+      <span>Relative susceptibility:</span>
+      <span><i style="background:#27ae60"></i>Low</span>
+      <span><i style="background:#f1c40f"></i>Moderate</span>
+      <span><i style="background:#e67e22"></i>High</span>
+      <span><i style="background:#e74c3c"></i>Very High</span>
+    </div>
+
+    <footer class="eco-footer">
+      Research prototype â€¢ Historical 2022/2024 flood maps â€¢
+      Not a live flood forecast or calibrated flood probability.
+    </footer>
+  `;
+
+    const style = document.createElement("style");
+
+    style.textContent = `
+    * { box-sizing: border-box; }
+
+    .eco-header {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      padding:16px 22px;
+      background:#173b2a;
+      gap:15px;
+    }
+
+    .eco-header h2 {
+      margin:0;
+      font-size:22px;
+    }
+
+    .eco-header p {
+      margin:6px 0 0;
+      color:#b6d1c0;
+      font-size:13px;
+    }
+
+    .eco-back, .eco-toolbar button {
+      background:#2f8051;
+      color:white;
+      border:0;
+      border-radius:7px;
+      padding:11px 14px;
+      text-decoration:none;
+      cursor:pointer;
+    }
+
+    .eco-toolbar {
+      display:flex;
+      align-items:center;
+      flex-wrap:wrap;
+      gap:12px;
+      padding:13px 20px;
+      background:#112c21;
+    }
+
+    .eco-toolbar select {
+      padding:11px;
+      border:1px solid #417457;
+      background:#1c422e;
+      color:white;
+      border-radius:7px;
+      min-width:170px;
+    }
+
+    #api-status {
+      font-size:12px;
+      color:#c5d9cc;
+    }
+
+    .eco-main {
+      display:grid;
+      grid-template-columns:minmax(0, 1fr) 325px;
+      min-height:540px;
+      height:calc(100vh - 225px);
+    }
+
+    #ml-map {
+      width:100%;
+      height:100%;
+      min-height:500px;
+      background:#dbe9dc;
+    }
+
+    #ml-details {
+      padding:22px;
+      background:#142b22;
+      overflow-y:auto;
+      border-left:1px solid #365740;
+    }
+
+    #ml-details h3 {
+      margin-top:0;
+      line-height:1.4;
+    }
+
+    .eco-stat {
+      padding:12px;
+      background:#204030;
+      border-radius:8px;
+      margin:10px 0;
+    }
+
+    .eco-stat small {
+      display:block;
+      color:#b6d1c0;
+      margin-bottom:6px;
+    }
+
+    .eco-stat strong {
+      font-size:20px;
+    }
+
+    .eco-legend {
+      display:flex;
+      flex-wrap:wrap;
+      gap:16px;
+      align-items:center;
+      padding:12px 20px;
+      background:#163829;
+      font-size:13px;
+    }
+
+    .eco-legend i {
+      display:inline-block;
+      width:12px;
+      height:12px;
+      margin-right:5px;
+      border-radius:3px;
+    }
+
+    .eco-footer {
+      text-align:center;
+      font-size:11px;
+      padding:10px;
+      color:#a7bcb0;
+    }
+
+    .leaflet-container {
+      font-family:Arial, sans-serif;
+    }
+
+    @media(max-width:800px) {
+      .eco-main {
+        grid-template-columns:1fr;
+        height:auto;
+      }
+
+      #ml-map {
+        height:480px;
+      }
+
+      #ml-details {
+        min-height:260px;
+      }
+
+      .eco-header h2 {
+        font-size:17px;
+      }
+    }
+  `;
+
+    document.head.appendChild(style);
+}
+
+function addDetail(label, value) {
+    const box = document.createElement("div");
+    box.className = "eco-stat";
+
+    const small = document.createElement("small");
+    small.textContent = label;
+
+    const strong = document.createElement("strong");
+    strong.textContent = String(value);
+
+    box.append(small, strong);
+    $("ml-details").appendChild(box);
+}
+
+function showDetails(properties) {
+    const panel = $("ml-details");
+    panel.replaceChildren();
+
+    const title = document.createElement("h3");
+    title.textContent = properties.upazila + ", " + properties.district;
+    panel.appendChild(title);
+
+    const score = Number(properties.mean_score);
+    const level = category(score);
+
+    addDetail("Mean susceptibility score", score.toFixed(4));
+
+    addDetail("Mean score category", level);
+
+    addDetail(
+        "Dominant pixel class",
+        properties.dominant_class ||
+        ["Low", "Moderate", "High", "Very High"].reduce(
+            (best, name) =>
+                Number(properties[
+                    {
+                        Low: "low_pct",
+                        Moderate: "moderate_pct",
+                        High: "high_pct",
+                        "Very High": "very_high_pct"
+                    }[name]
+                    ]) >
+                Number(properties[
+                    {
+                        Low: "low_pct",
+                        Moderate: "moderate_pct",
+                        High: "high_pct",
+                        "Very High": "very_high_pct"
+                    }[best]
+                    ])
+                    ? name
+                    : best,
+            "Low"
+        )
+    );
+
+    addDetail(
+        "High + Very High pixel share",
+        percentage(properties.high_very_high_pct)
+    );
+
+    addDetail(
+        "Observed flooded pixels â€” 2022",
+        percentage(properties.observed_flood22_pct)
+    );
+
+    addDetail(
+        "Observed flooded pixels â€” 2024",
+        percentage(properties.observed_flood24_pct)
+    );
+
+    addDetail(
+        "Census population",
+        Number(properties.population).toLocaleString()
+    );
+
+    addDetail(
+        "Valid raster coverage",
+        percentage(properties.coverage_pct)
+    );
+}
+
+function fillDistricts() {
+    const districts = [
+        ...new Set(allRecords.map((row) => row.district))
+    ].sort();
+
+    const select = $("district-filter");
+
+    for (const district of districts) {
+        const option = document.createElement("option");
+        option.value = district;
+        option.textContent = district;
+        select.appendChild(option);
+    }
+}
+
+function fillUpazilas() {
+    const district = $("district-filter").value;
+    const select = $("upazila-filter");
+
+    select.replaceChildren();
+
+    const initial = document.createElement("option");
+    initial.value = "";
+    initial.textContent = "Select Upazila";
+    select.appendChild(initial);
+
+    for (const record of allRecords) {
+        if (district && record.district !== district) continue;
+
+        const option = document.createElement("option");
+        option.value = record.district + "|" + record.upazila;
+        option.textContent = record.upazila;
+        select.appendChild(option);
+    }
+}
+
+function findLayer(district, upazila) {
+    let selected = null;
+
+    geoLayer.eachLayer((layer) => {
+        const p = layer.feature.properties;
+
+        if (p.district === district && p.upazila === upazila) {
+            selected = layer;
+        }
+    });
+
+    return selected;
+}
+
+function selectUpazila(district, upazila) {
+    const layer = findLayer(district, upazila);
+    if (!layer) return;
+
+    $("district-filter").value = district;
+    fillUpazilas();
+    $("upazila-filter").value = district + "|" + upazila;
+
+    showDetails(layer.feature.properties);
+
+    map.fitBounds(layer.getBounds(), {
+        padding: [35, 35],
+        maxZoom: 11
+    });
+
+    layer.bringToFront();
+}
+
+function createMap(geojson) {
+    map = L.map("ml-map", {
+        preferCanvas: true,
+        zoomControl: true
+    });
+
+    L.tileLayer(
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {
+            maxZoom: 18,
+            attribution: "&copy; OpenStreetMap contributors"
+        }
+    ).addTo(map);
+
+    const canvas = L.canvas({ padding: 0.5 });
+
+    geoLayer = L.geoJSON(geojson, {
+        renderer: canvas,
+
+        style(feature) {
+            const level = category(
+                Number(feature.properties.mean_score)
+            );
+
+            return {
+                color: "#294238",
+                weight: 1,
+                fillColor: COLORS[level],
+                fillOpacity: 0.72
+            };
+        },
+
+        onEachFeature(feature, layer) {
+            const p = feature.properties;
+
+            layer.bindTooltip(
+                p.upazila + " (" + p.district + ")",
+                { sticky: true }
+            );
+
+            layer.on("click", () => {
+                selectUpazila(p.district, p.upazila);
+            });
+        }
+    }).addTo(map);
+
+    map.fitBounds(geoLayer.getBounds(), {
+        padding: [25, 25]
+    });
+}
+
+async function initialize() {
+    createLayout();
+
+    try {
+        const health = await getHealth();
+
+        if (health.status !== "healthy") {
+            throw new Error("Backend is not healthy.");
+        }
+
+        $("api-status").textContent = "Loading geographic ML data...";
+
+        const [result, geojson, config] = await Promise.all([
+            getAllUpazilas(),
+            getFloodGeoJSON(),
+            getThresholds()
+        ]);
+
+        if (
+            result.count !== 38 ||
+            geojson.features?.length !== 38
+        ) {
+            throw new Error("Expected 38 Upazilas.");
+        }
+
+        allRecords = result.results;
+        thresholds = config;
+
+        fillDistricts();
+        fillUpazilas();
+        createMap(geojson);
+
+        $("district-filter").addEventListener("change", () => {
+            fillUpazilas();
+
+            const district = $("district-filter").value;
+
+            if (!district) {
+                map.fitBounds(geoLayer.getBounds());
+                return;
+            }
+
+            const selected = L.featureGroup();
+
+            geoLayer.eachLayer((layer) => {
+                if (layer.feature.properties.district === district) {
+                    selected.addLayer(layer);
+                }
+            });
+
+            if (selected.getLayers().length) {
+                map.fitBounds(selected.getBounds());
+            }
+        });
+
+        $("upazila-filter").addEventListener("change", (event) => {
+            if (!event.target.value) return;
+
+            const [district, upazila] = event.target.value.split("|");
+            selectUpazila(district, upazila);
+        });
+
+        $("reset-map").addEventListener("click", () => {
+            $("district-filter").value = "";
+            fillUpazilas();
+            map.fitBounds(geoLayer.getBounds());
+        });
+
+        $("api-status").textContent =
+            "Connected â€¢ 38 Upazilas â€¢ XGBoost susceptibility";
+
+        console.log("EcoQuest ML Map initialized successfully.");
+
+    } catch (error) {
+        console.error("EcoQuest ML Map Error:", error);
+
+        $("api-status").textContent = "Connection failed";
+
+        $("ml-details").textContent =
+            "Could not load map: " + error.message +
+            ". Check FastAPI on port 8000.";
+    }
+}
+
+initialize();
+
+========== MAIN GAME UI ==========
+   <div class="brand">
+    <small>REALISTIC 3D OPEN WORLD SIMULATOR</small>
+    <h1>ðŸŒ¿ EcoQuest</h1>
+    <p>Explore. Build. Protect your city.</p>
+   </div>
+
+   <div class="stats-strip">
+    <div class="stat"><span>ðŸ’° Credits</span><strong id="credits">500</strong></div>
+    <div class="stat"><span>ðŸ­ Pollution</span><strong id="pollution">38%</strong></div>
+    <div class="stat"><span>ðŸ˜Š Happiness</span><strong id="happiness">65%</strong></div>
+    <div class="stat"><span>ðŸŒ³ Green Score</span><strong id="green">32%</strong></div>
+    <div class="stat"><span>ðŸŒ§ï¸ Rainfall</span><strong id="rainfall">0%</strong></div>
+    <div class="stat" id="risk-card"><span>ðŸŒŠ Flood Risk</span><strong id="flood-risk">0%</strong></div>
+    <div class="stat"><span>ðŸš° Drainage</span><strong id="drainage">55%</strong></div>
+    <div class="stat"><span>âš¡ Energy</span><strong id="energy">45%</strong></div>
+   </div>
+  </header>
+
+  <nav class="navigation">
+   <span class="bar-label">EXPLORE</span>
+   ${districts.map(d=>`
+    <button class="nav-btn ${d.id==='central'?'active':''}" data-district="${d.id}">
+     ${d.icon} ${d.name}
+    </button>
+   `).join('')}
+  </nav>
+
+  <nav class="toolbar">
+   <span class="bar-label">BUILD</span>
+
+   <button class="tool-btn active" data-tool="oak"><span>ðŸŒ³ Oak Tree</span><small>8 Credits</small></button>
+   <button class="tool-btn" data-tool="pine"><span>ðŸŒ² Pine Tree</span><small>10 Credits</small></button>
+   <button class="tool-btn" data-tool="blossom"><span>ðŸŒ¸ Blossom</span><small>12 Credits</small></button>
+   <button class="tool-btn" data-tool="flower"><span>ðŸŒº Garden</span><small>5 Credits</small></button>
+   <button class="tool-btn" data-tool="house"><span>ðŸ  House</span><small>45 Credits</small></button>
+   <button class="tool-btn" data-tool="apartment"><span>ðŸ¢ Apartment</span><small>80 Credits</small></button>
+   <button class="tool-btn" data-tool="factory"><span>ðŸ­ Factory</span><small>100 Credits</small></button>
+   <button class="tool-btn" data-tool="bench"><span>ðŸª‘ Bench</span><small>15 Credits</small></button>
+   <button class="tool-btn" data-tool="solar"><span>â˜€ï¸ Solar</span><small>25 Credits</small></button>
+   <button class="tool-btn" data-tool="lamp"><span>ðŸ’¡ Lamp</span><small>18 Credits</small></button>
+   <button class="tool-btn" data-tool="remove"><span>ðŸ—‘ï¸ Remove</span><small>Refund 50%</small></button>
+
+   <span class="bar-label">WEATHER</span>
+
+   <button class="action-btn blue" data-action="rain">ðŸŒ§ï¸ Rain</button>
+   <button class="action-btn" data-action="clear">â˜€ï¸ Clear</button>
+   <button class="action-btn orange" data-action="drainage">ðŸš° Drainage</button>
+   <button class="action-btn" data-action="clean">â™»ï¸ Cleanup</button>
+   <button class="action-btn" data-action="save">ðŸ’¾ Save</button>
+   <button class="action-btn" data-action="load">ðŸ“‚ Load</button>
+   <button class="action-btn red" data-action="reset">â†» Reset</button>
+
+   <span id="selected-tool">Selected: Oak Tree</span>
+  </nav>
+
+  <section class="game-stage">
+   <div class="stage-location" id="location-label">ðŸŒ³ Central Park</div>
+   <div class="game-alert">â— LIVE 3D SIMULATION</div>
+
+   <div class="camera-controls">
+    <button id="zoom-in">+</button>
+    <button id="zoom-out">âˆ’</button>
+    <button id="camera-reset">âŒ‚</button>
+   </div>
+
+   <div class="movement-hint">
+    WASD: Move Â· Drag: Rotate Â· Right Drag: Pan Â· Scroll: Zoom
+   </div>
+
+   <div id="city-game"></div>
+  </section>
+
+  <footer class="game-footer">
+   <div id="status">Loading EcoQuest...</div>
+   <div class="footer-info">
+    LEVEL <strong id="level">01</strong> Â· 7 CONNECTED DISTRICTS
+   </div>
+  </footer>
+
+ </main>
+</div>
+`;
+
+[
+    'credits','pollution','happiness','green',
+    'rainfall','flood-risk','drainage','energy',
+    'level','status','location-label',
+    'selected-tool','risk-card'
+].forEach(id=>{
+    hud[id]=document.getElementById(id);
+});
+
+========== MAIN GAME INITIALIZATION ==========
+        scene.fog=new THREE.Fog(0x9db8c0,1400,3500);
+
+        camera=new THREE.PerspectiveCamera(
+            48,
+            container.clientWidth/container.clientHeight,
+            0.1,
+            5000
+        );
+
+        renderer=new THREE.WebGLRenderer({
+            antialias:true,
+            powerPreference:'high-performance'
+        });
+
+        renderer.setSize(
+            container.clientWidth,
+            container.clientHeight
+        );
+
+        renderer.setPixelRatio(
+            Math.min(window.devicePixelRatio,1.5)
+        );
+
+        renderer.shadowMap.enabled=true;
+        renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+
+        renderer.outputColorSpace=THREE.SRGBColorSpace;
+        renderer.toneMapping=THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure=1.15;
+
+        container.appendChild(renderer.domElement);
+
+        clock=new THREE.Clock();
+
+        // Initialize scene materials.
+        initializeMaterials();
+
+        // Initialize the new lighting system.
+        setupLighting();
+
+        // Load realistic GLB models before world generation.
+        message('Loading realistic 3D models...');
+
+        modelLibrary=new ModelLibrary(
+            scene,
+            message,
+            renderer
+        );
+
+        const loadedCount=await modelLibrary.preload();
+
+        console.log(
+            'EcoQuest asset report:',
+            modelLibrary.getReport()
+        );
+
+        // World ground.
+        addPlane(
+            0,-0.3,0,
+            3500,3200,
+            materials.grass
+        );
+
+        // Generate roads and seven districts.
+        buildRoadNetwork();
+        buildDistricts();
+
+        // Add procedural vegetation.
+        createNaturalTerrain(scene,districts);
+
+        // Street furniture.
+        districts.forEach(d=>{
+
+            for(let i=0;i<4;i++){
+
+                createStreetLamp(
+                    d.x-270+i*180,
+                    d.z+210
+                );
+            }
+        });
+
+        // Gameplay systems.
+        createTraffic();
+        createRain();
+        createFloodSystem();
+
+        // Camera and interactions.
+        setupCamera();
+        setupInteraction();
+        setupInterfaceEvents();
+
+        // Morning / Noon / Sunset / Night buttons.
+        setupLightingControls();
+
+        // Initialize explainable environmental assistant.
+        environmentAssistant = createEnvironmentAssistant({
+            getStats: () => ({ ...stats })
+        });
+        // Apply current weather to lighting.
+        lightingSystem.setRainIntensity(stats.rainfall);
+
+        // Responsive canvas.
+        const resizeObserver=new ResizeObserver(()=>{
+
+            const width=container.clientWidth;
+            const height=container.clientHeight;
+
+            if(!width || !height) return;
+
+            camera.aspect=width/height;
+
+========== EVENT HANDLERS ==========
+
+  src\main.js:477:    });
+  src\main.js:478:}
+  src\main.js:479:
+> src\main.js:480:function initializeMaterials(){
+  src\main.js:481:
+  src\main.js:482:    materials.grass=new THREE.MeshStandardMaterial({
+  src\main.js:483:        map:noiseTexture('#738d56',14),
+  src\main.js:484:        roughness:1
+  src\main.js:485:    });
+  src\main.js:486:
+  src\main.js:487:    materials.parkGrass=new THREE.MeshStandardMaterial({
+  src\main.js:488:        map:noiseTexture('#638e4a',12),
+  src\main.js:2210:// 36. INTERFACE EVENTS
+  src\main.js:2211:// ============================================================
+  src\main.js:2212:
+> src\main.js:2213:function setupInterfaceEvents(){
+  src\main.js:2214:
+  src\main.js:2215:    document.querySelectorAll('[data-district]').forEach(btn=>{
+  src\main.js:2216:
+  src\main.js:2217:        btn.addEventListener('click',()=>{
+  src\main.js:2218:            goToDistrict(btn.dataset.district);
+  src\main.js:2219:        });
+  src\main.js:2220:    });
+  src\main.js:2221:
+  src\main.js:2369:// 37. MAIN GAME INITIALIZATION
+  src\main.js:2370:// ============================================================
+  src\main.js:2371:
+> src\main.js:2372:async function initializeGame(){
+  src\main.js:2373:
+  src\main.js:2374:    const container=document.getElementById('city-game');
+  src\main.js:2375:
+  src\main.js:2376:    try{
+  src\main.js:2377:
+  src\main.js:2378:        scene=new THREE.Scene();
+  src\main.js:2379:
+  src\main.js:2380:        scene.background=new THREE.Color(0x9db8c0);
+  src\main.js:2468:        // Camera and interactions.
+  src\main.js:2469:        setupCamera();
+  src\main.js:2470:        setupInteraction();
+> src\main.js:2471:        setupInterfaceEvents();
+  src\main.js:2472:
+  src\main.js:2473:        // Morning / Noon / Sunset / Night buttons.
+  src\main.js:2474:        setupLightingControls();
+  src\main.js:2475:
+  src\main.js:2476:        // Initialize explainable environmental assistant.
+  src\main.js:2477:        environmentAssistant = createEnvironmentAssistant({
+  src\main.js:2478:            getStats: () => ({ ...stats })
+  src\main.js:2479:        });
+
+
+
