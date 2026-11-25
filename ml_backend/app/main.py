@@ -3,8 +3,18 @@ import json
 
 import pandas as pd
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+from app.model_service import (
+    ModelUnavailableError,
+    get_feature_importance,
+    get_model_info,
+    is_model_loaded,
+    load_model,
+    predict_features,
+)
 
 
 # =====================================================
@@ -20,7 +30,7 @@ THRESHOLD_PATH = DATA_DIR / "config" / "susceptibility_thresholds.json"
 
 
 # =====================================================
-# LOAD DATA
+# LOAD PRECOMPUTED GEOGRAPHIC DATA
 # =====================================================
 
 if not CSV_PATH.exists():
@@ -60,16 +70,38 @@ if GEOJSON_PATH.exists():
 
 
 # =====================================================
+# MODEL INPUT SCHEMA
+# =====================================================
+
+class ModelPredictionInput(BaseModel):
+    elev: float = Field(..., allow_inf_nan=False)
+    hand: float = Field(..., allow_inf_nan=False)
+    slope: float = Field(..., allow_inf_nan=False)
+    curv: float = Field(..., allow_inf_nan=False)
+    twi: float = Field(..., allow_inf_nan=False)
+    sti: float = Field(..., allow_inf_nan=False)
+    dist: float = Field(..., allow_inf_nan=False)
+    dd: float = Field(..., allow_inf_nan=False)
+    rain: float = Field(..., allow_inf_nan=False)
+    lulc: float = Field(..., allow_inf_nan=False)
+    soil: float = Field(..., allow_inf_nan=False)
+
+    class Config:
+        extra = "forbid"
+
+
+# =====================================================
 # FASTAPI APPLICATION
 # =====================================================
 
 app = FastAPI(
     title="EcoQuest Flood Intelligence API",
     description=(
-        "Sylhet Division flood susceptibility information "
-        "powered by XGBoost environmental analysis."
+        "Sylhet Division flood susceptibility information and "
+        "feature-based XGBoost inference. The model target is historical "
+        "flood fraction >= 0.50; this API is not a real-time flood forecast."
     ),
-    version="1.0.0"
+    version="1.1.0"
 )
 
 
@@ -131,7 +163,7 @@ def root():
     return {
         "project": "EcoQuest",
         "message": "Flood Intelligence Backend is running.",
-        "version": "1.0.0",
+        "version": app.version,
         "documentation": "/docs"
     }
 
@@ -150,7 +182,8 @@ def health():
         "upazila_count": int(len(df)),
         "geojson_loaded": geojson_data is not None,
         "thresholds_loaded": bool(thresholds),
-        "model": "XGBoost One-Hot LULC",
+        "model": "XGBoost Classifier",
+        "model_loaded": is_model_loaded(),
         "data_type": "Flood susceptibility"
     }
 
@@ -319,11 +352,51 @@ def get_thresholds():
 
 
 # =====================================================
-# STARTUP MESSAGE
+# 8. XGBOOST MODEL INFORMATION
+# =====================================================
+
+@app.get("/api/model/info")
+def model_info():
+
+    return get_model_info()
+
+
+# =====================================================
+# 9. XGBOOST GLOBAL FEATURE IMPORTANCE
+# =====================================================
+
+@app.get("/api/model/feature-importance")
+def model_feature_importance():
+
+    try:
+        return get_feature_importance()
+    except ModelUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+# =====================================================
+# 10. XGBOOST FEATURE-BASED PREDICTION
+# =====================================================
+
+@app.post("/api/model/predict")
+def model_predict(payload: ModelPredictionInput):
+
+    try:
+        return predict_features(payload.dict())
+    except ModelUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+# =====================================================
+# STARTUP
 # =====================================================
 
 @app.on_event("startup")
 def startup_event():
+
+    model_ready = load_model()
 
     print("=" * 55)
     print("ECOQUEST FLOOD INTELLIGENCE API")
@@ -331,5 +404,8 @@ def startup_event():
     print(f"Upazilas loaded: {len(df)}")
     print(f"GeoJSON loaded: {geojson_data is not None}")
     print(f"Thresholds loaded: {bool(thresholds)}")
+    print(f"XGBoost model loaded: {model_ready}")
+    if not model_ready:
+        print("Model inference is unavailable; inspect model file/dependencies.")
     print("Backend ready!")
     print("=" * 55)
