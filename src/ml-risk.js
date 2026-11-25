@@ -61,3 +61,10 @@ export async function predictFloodTarget(features) {
         body: JSON.stringify(features)
     });
 }
+
+export async function explainFloodPrediction(features) {
+    return request("/api/model/explain", {
+        method: "POST",
+        body: JSON.stringify(features)
+    });
+}
