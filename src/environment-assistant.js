@@ -518,7 +518,7 @@ export function createEnvironmentAssistant({ getStats }) {
                  ></div>
              </div>
 
-             ${result.selectedArea ? \`
+             ${result.selectedArea ? `
              <div class="eco-ai-area-context">
                  <strong>Historical susceptibility context</strong><br>
                  ${escapeHtml(result.selectedArea.upazila)}, ${escapeHtml(result.selectedArea.district)}<br>
@@ -526,11 +526,11 @@ export function createEnvironmentAssistant({ getStats }) {
                  High + Very High area: ${Number(result.selectedArea.high_very_high_pct).toFixed(2)}%<br>
                  Game modifier: ${result.susceptibilityMultiplier.toFixed(2)}×
              </div>
-             \` : \`
+             ` : `
              <div class="eco-ai-area-context">
                  No Upazila selected. The game is using local simulated conditions only.
              </div>
-             \`}
+             `}
              <div class="eco-ai-section">
                  📊 Local simulation drivers
              </div>
