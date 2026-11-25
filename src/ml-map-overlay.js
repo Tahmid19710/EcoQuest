@@ -5,7 +5,9 @@ import {
     getHealth,
     getAllUpazilas,
     getFloodGeoJSON,
-    getThresholds
+    getThresholds,
+    getModelInfo,
+    getFeatureImportance
 } from "./ml-risk.js";
 
 const COLORS = {
@@ -23,6 +25,8 @@ let selectedLayer = null;
 let allRecords = [];
 let thresholds = null;
 let cachedGeoJSON = null;
+let modelInfo = null;
+let modelImportance = null;
 let dataPromise = null;
 let isOpen = false;
 let previousOverflow = "";
@@ -359,6 +363,7 @@ function showWelcome() {
         "Select an Upazila on the map to inspect its ML statistics.";
 
     panel.append(heading, paragraph);
+    renderModelInsights();
 }
 
 function addDetail(label, value) {
@@ -430,6 +435,105 @@ function showDetails(properties) {
         "Valid raster coverage",
         percentage(properties.coverage_pct)
     );
+
+    renderModelInsights();
+}
+
+function renderModelInsights() {
+    const panel = $("ml-details");
+    if (!panel || (!modelInfo && !modelImportance)) return;
+
+    const section = document.createElement("section");
+    section.style.marginTop = "18px";
+    section.style.paddingTop = "14px";
+    section.style.borderTop = "1px solid #52715b";
+
+    const heading = document.createElement("h3");
+    heading.textContent = "Trained XGBoost Model";
+    heading.style.margin = "0 0 6px";
+    section.appendChild(heading);
+
+    const subtitle = document.createElement("p");
+    subtitle.textContent = modelInfo?.loaded
+        ? `5-fold spatial CV | ${Number(modelInfo.training_samples || 0).toLocaleString()} training samples`
+        : "Model metadata unavailable";
+    subtitle.style.cssText = "margin:0 0 10px;color:#b6d1c0;font-size:11px;";
+    section.appendChild(subtitle);
+
+    const metrics = modelInfo?.mean_spatial_cv || {};
+    const metricGrid = document.createElement("div");
+    metricGrid.style.cssText = "display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;";
+
+    const metricDefinitions = [
+        ["AUC", "auc", true],
+        ["Accuracy", "accuracy", true],
+        ["Kappa", "kappa", false],
+        ["F1-score", "f1", true],
+        ["Brier score", "brier", false]
+    ];
+
+    metricDefinitions.forEach(([label, key, asPercent]) => {
+        if (!Number.isFinite(Number(metrics[key]))) return;
+
+        const card = document.createElement("div");
+        card.style.cssText = "padding:9px;border-radius:7px;background:#204030;";
+
+        const name = document.createElement("small");
+        name.textContent = label;
+        name.style.cssText = "display:block;color:#b6d1c0;margin-bottom:5px;";
+
+        const value = document.createElement("strong");
+        value.textContent = asPercent
+            ? (Number(metrics[key]) * 100).toFixed(2) + "%"
+            : Number(metrics[key]).toFixed(4);
+        value.style.fontSize = "16px";
+
+        card.append(name, value);
+        metricGrid.appendChild(card);
+    });
+
+    section.appendChild(metricGrid);
+
+    if (modelImportance?.features?.length) {
+        const featureHeading = document.createElement("h4");
+        featureHeading.textContent = "Top global feature importance";
+        featureHeading.style.cssText = "margin:14px 0 8px;color:#a9e4af;font-size:12px;";
+        section.appendChild(featureHeading);
+
+        modelImportance.features.slice(0, 5).forEach(item => {
+            const row = document.createElement("div");
+            row.style.marginBottom = "9px";
+
+            const line = document.createElement("div");
+            line.style.cssText = "display:flex;justify-content:space-between;gap:8px;font-size:11px;margin-bottom:4px;";
+
+            const feature = document.createElement("span");
+            feature.textContent = item.feature;
+
+            const value = document.createElement("strong");
+            value.textContent = Number(item.gain_importance_pct).toFixed(2) + "%";
+
+            line.append(feature, value);
+
+            const track = document.createElement("div");
+            track.style.cssText = "height:6px;border-radius:6px;background:#405448;overflow:hidden;";
+
+            const fill = document.createElement("div");
+            const width = Math.max(0, Math.min(100, Number(item.gain_importance_pct) || 0));
+            fill.style.cssText = `height:100%;width:${width}%;background:#78c88b;border-radius:6px;`;
+
+            track.appendChild(fill);
+            row.append(line, track);
+            section.appendChild(row);
+        });
+    }
+
+    const note = document.createElement("p");
+    note.textContent = "Importance is global XGBoost gain, not an area-specific SHAP explanation or a causal effect. The susceptibility map shows historical model-derived data, not a real-time flood forecast.";
+    note.style.cssText = "margin:12px 0 0;color:#b6d1c0;font-size:10px;line-height:1.5;";
+    section.appendChild(note);
+
+    panel.appendChild(section);
 }
 
 function fillDistricts() {
@@ -603,10 +707,12 @@ async function loadMLData() {
 
             $("ml-status").textContent = "Loading 38 Upazilas...";
 
-            const [result, geojson, config] = await Promise.all([
+            const [result, geojson, config, infoResult, importanceResult] = await Promise.all([
                 getAllUpazilas(),
                 getFloodGeoJSON(),
-                getThresholds()
+                getThresholds(),
+                getModelInfo().then(data => ({ data })).catch(error => ({ error })),
+                getFeatureImportance().then(data => ({ data })).catch(error => ({ error }))
             ]);
 
             if (
@@ -619,6 +725,8 @@ async function loadMLData() {
             allRecords = result.results;
             thresholds = config;
             cachedGeoJSON = geojson;
+            modelInfo = infoResult.data || null;
+            modelImportance = importanceResult.data || null;
 
             fillDistricts();
             fillUpazilas();
@@ -656,8 +764,9 @@ export async function openMLMap() {
 
         if (!isOpen) return;
 
-        $("ml-status").textContent =
-            "Connected | 38 Upazilas | XGBoost susceptibility";
+        $("ml-status").textContent = modelInfo?.loaded
+            ? "Connected | 38 Upazilas | XGBoost + spatial CV"
+            : "Connected | 38 Upazilas | model metadata unavailable";
 
         createMap();
 
