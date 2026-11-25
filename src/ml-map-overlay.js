@@ -5,7 +5,9 @@ import {
     getHealth,
     getAllUpazilas,
     getFloodGeoJSON,
-    getThresholds
+    getThresholds,
+    getModelInfo,
+    getModelFeatureImportance
 } from "./ml-risk.js";
 
 const COLORS = {
@@ -27,6 +29,8 @@ let dataPromise = null;
 let isOpen = false;
 let previousOverflow = "";
 let selectionHandler = null;
+let modelInfo = null;
+let featureImportance = null;
 
 function $(id) {
     return overlay?.querySelector(`#${id}`);
@@ -67,19 +71,15 @@ function createLayout() {
             <select id="ml-district">
                 <option value="">All Districts</option>
             </select>
-
             <select id="ml-upazila">
                 <option value="">Select Upazila</option>
             </select>
-
             <button id="ml-reset" type="button">Reset Map</button>
-
             <span id="ml-status">Connecting to ML backend...</span>
         </div>
 
         <main class="ml-main">
             <div id="ml-map"></div>
-
             <aside id="ml-details">
                 <h3>Flood Susceptibility</h3>
                 <p>Select an Upazila to inspect its ML statistics.</p>
@@ -94,8 +94,9 @@ function createLayout() {
         </div>
 
         <footer class="ml-footer">
-            Research prototype | Historical 2022/2024 flood observations.
-            Not a real-time flood forecast.
+            Susceptibility map uses precomputed geographic analysis.
+            Binary XGBoost inference is a separate feature-input endpoint;
+            neither is a real-time flood forecast.
         </footer>
     `;
 
@@ -104,179 +105,71 @@ function createLayout() {
 
     style.textContent = `
         #ecoquest-ml-overlay {
-            position:fixed;
-            inset:0;
-            z-index:10000;
-            display:none;
-            flex-direction:column;
-            background:#0b1714;
-            color:#eef7ef;
+            position:fixed; inset:0; z-index:10000; display:none;
+            flex-direction:column; background:#0b1714; color:#eef7ef;
             font-family:Arial,sans-serif;
         }
-
-        #ecoquest-ml-overlay * {
-            box-sizing:border-box;
-        }
-
+        #ecoquest-ml-overlay * { box-sizing:border-box; }
         .ml-header {
-            display:flex;
-            justify-content:space-between;
-            align-items:center;
-            gap:15px;
-            padding:14px 22px;
-            background:#173b2a;
+            display:flex; justify-content:space-between; align-items:center;
+            gap:15px; padding:14px 22px; background:#173b2a;
         }
-
-        .ml-header h2 {
-            margin:0;
-            font-size:21px;
+        .ml-header h2 { margin:0; font-size:21px; }
+        .ml-header p { margin:5px 0 0; font-size:12px; color:#b6d1c0; }
+        .ml-header button,.ml-toolbar button {
+            border:0; border-radius:7px; padding:10px 14px;
+            background:#2f8051; color:white; cursor:pointer; font-weight:bold;
         }
-
-        .ml-header p {
-            margin:5px 0 0;
-            font-size:12px;
-            color:#b6d1c0;
-        }
-
-        .ml-header button,
-        .ml-toolbar button {
-            border:0;
-            border-radius:7px;
-            padding:10px 14px;
-            background:#2f8051;
-            color:white;
-            cursor:pointer;
-            font-weight:bold;
-        }
-
-        .ml-header button:hover,
-        .ml-toolbar button:hover {
-            background:#439d65;
-        }
-
+        .ml-header button:hover,.ml-toolbar button:hover { background:#439d65; }
         .ml-toolbar {
-            display:flex;
-            align-items:center;
-            flex-wrap:wrap;
-            gap:10px;
-            padding:12px 18px;
-            background:#112c21;
+            display:flex; align-items:center; flex-wrap:wrap; gap:10px;
+            padding:12px 18px; background:#112c21;
         }
-
         .ml-toolbar select {
-            padding:10px;
-            border:1px solid #417457;
-            background:#1c422e;
-            color:white;
-            border-radius:7px;
-            min-width:160px;
+            padding:10px; border:1px solid #417457; background:#1c422e;
+            color:white; border-radius:7px; min-width:160px;
         }
-
-        #ml-status {
-            font-size:12px;
-            color:#c5d9cc;
-        }
-
+        #ml-status { font-size:12px; color:#c5d9cc; }
         .ml-main {
-            display:grid;
-            grid-template-columns:minmax(0,1fr) 320px;
-            flex:1;
-            min-height:0;
+            display:grid; grid-template-columns:minmax(0,1fr) 340px;
+            flex:1; min-height:0;
         }
-
-        #ml-map {
-            width:100%;
-            height:100%;
-            min-height:300px;
-            background:#dbe9dc;
-        }
-
+        #ml-map { width:100%; height:100%; min-height:300px; background:#dbe9dc; }
         #ecoquest-ml-overlay .leaflet-container {
-            width:100%;
-            height:100%;
-            font-family:Arial,sans-serif;
+            width:100%; height:100%; font-family:Arial,sans-serif;
         }
-
         #ml-details {
-            padding:18px;
-            overflow-y:auto;
-            background:#142b22;
+            padding:18px; overflow-y:auto; background:#142b22;
             border-left:1px solid #365740;
         }
-
-        #ml-details h3 {
-            margin-top:0;
-            line-height:1.4;
-        }
-
-        .ml-stat {
-            padding:11px;
-            margin:10px 0;
-            border-radius:8px;
-            background:#204030;
-        }
-
-        .ml-stat small {
-            display:block;
-            color:#b6d1c0;
-            margin-bottom:6px;
-        }
-
-        .ml-stat strong {
-            font-size:18px;
-        }
-
+        #ml-details h3 { margin-top:0; line-height:1.4; }
+        .ml-stat { padding:11px; margin:10px 0; border-radius:8px; background:#204030; }
+        .ml-stat small { display:block; color:#b6d1c0; margin-bottom:6px; }
+        .ml-stat strong { font-size:18px; }
+        .ml-section-title { margin:22px 0 8px; font-size:14px; }
+        .ml-model-note { color:#b6d1c0; font-size:11px; line-height:1.5; }
+        .ml-importance-row { margin:10px 0; font-size:11px; }
+        .ml-importance-label { display:flex; justify-content:space-between; gap:8px; margin-bottom:5px; }
+        .ml-bar { height:7px; overflow:hidden; border-radius:8px; background:#345542; }
+        .ml-bar span { display:block; height:100%; background:#83d99a; }
         .ml-legend {
-            display:flex;
-            flex-wrap:wrap;
-            gap:18px;
-            padding:11px 20px;
-            background:#163829;
-            font-size:12px;
+            display:flex; flex-wrap:wrap; gap:18px; padding:11px 20px;
+            background:#163829; font-size:12px;
         }
-
         .ml-legend i {
-            display:inline-block;
-            width:11px;
-            height:11px;
-            margin-right:5px;
-            border-radius:3px;
+            display:inline-block; width:11px; height:11px;
+            margin-right:5px; border-radius:3px;
         }
-
         .ml-footer {
-            padding:9px;
-            text-align:center;
-            font-size:11px;
-            color:#a7bcb0;
-            background:#10271c;
+            padding:9px; text-align:center; font-size:11px;
+            color:#a7bcb0; background:#10271c;
         }
-
         @media(max-width:800px) {
-            .ml-main {
-                display:flex;
-                flex-direction:column;
-                overflow-y:auto;
-            }
-
-            #ml-map {
-                height:55vh;
-                min-height:380px;
-                flex-shrink:0;
-            }
-
-            #ml-details {
-                min-height:230px;
-                overflow:visible;
-            }
-
-            .ml-header h2 {
-                font-size:16px;
-            }
-
-            .ml-toolbar select {
-                min-width:130px;
-                flex:1;
-            }
+            .ml-main { display:flex; flex-direction:column; overflow-y:auto; }
+            #ml-map { height:55vh; min-height:380px; flex-shrink:0; }
+            #ml-details { min-height:230px; overflow:visible; }
+            .ml-header h2 { font-size:16px; }
+            .ml-toolbar select { min-width:130px; flex:1; }
         }
     `;
 
@@ -287,64 +180,115 @@ function createLayout() {
 
     $("ml-reset").addEventListener("click", () => {
         if (!geoLayer || !map) return;
-
         $("ml-district").value = "";
         fillUpazilas();
-
         if (selectedLayer) {
             geoLayer.resetStyle(selectedLayer);
             selectedLayer = null;
         }
-
-        map.fitBounds(geoLayer.getBounds(), {
-            padding:[25,25]
-        });
-
+        map.fitBounds(geoLayer.getBounds(), { padding:[25,25] });
         showWelcome();
-
-        // Clear selected ML area in the Three.js game.
         if (selectionHandler) selectionHandler(null);
     });
 
     $("ml-district").addEventListener("change", () => {
         fillUpazilas();
-
         if (!geoLayer || !map) return;
-
         const district = $("ml-district").value;
-
         if (!district) {
             map.fitBounds(geoLayer.getBounds());
             return;
         }
-
         const selected = L.featureGroup();
-
         geoLayer.eachLayer(layer => {
-            if (layer.feature.properties.district === district) {
-                selected.addLayer(layer);
-            }
+            if (layer.feature.properties.district === district) selected.addLayer(layer);
         });
-
         if (selected.getLayers().length) {
-            map.fitBounds(selected.getBounds(), {
-                padding:[25,25]
-            });
+            map.fitBounds(selected.getBounds(), { padding:[25,25] });
         }
     });
 
     $("ml-upazila").addEventListener("change", event => {
         if (!event.target.value) return;
-
         const [district, upazila] = event.target.value.split("|");
         selectUpazila(district, upazila);
     });
 
     document.addEventListener("keydown", event => {
-        if (event.key === "Escape" && isOpen) {
-            closeMLMap();
-        }
+        if (event.key === "Escape" && isOpen) closeMLMap();
     });
+}
+
+function showImportance(panel) {
+    const heading = document.createElement("h4");
+    heading.className = "ml-section-title";
+    heading.textContent = "Global XGBoost Feature Importance";
+    panel.appendChild(heading);
+
+    if (!featureImportance?.features?.length) {
+        const note = document.createElement("p");
+        note.className = "ml-model-note";
+        note.textContent = "Feature importance is unavailable until the saved model loads.";
+        panel.appendChild(note);
+        return;
+    }
+
+    const max = Math.max(...featureImportance.features.map(item => item.gain_importance_pct), 0.0001);
+
+    featureImportance.features.forEach(item => {
+        const row = document.createElement("div");
+        row.className = "ml-importance-row";
+
+        const label = document.createElement("div");
+        label.className = "ml-importance-label";
+
+        const name = document.createElement("span");
+        name.textContent = item.feature;
+
+        const value = document.createElement("strong");
+        value.textContent = item.gain_importance_pct.toFixed(2) + "%";
+
+        label.append(name, value);
+
+        const bar = document.createElement("div");
+        bar.className = "ml-bar";
+        const fill = document.createElement("span");
+        fill.style.width = (item.gain_importance_pct / max * 100) + "%";
+        bar.appendChild(fill);
+
+        row.append(label, bar);
+        panel.appendChild(row);
+    });
+
+    const note = document.createElement("p");
+    note.className = "ml-model-note";
+    note.textContent = featureImportance.note;
+    panel.appendChild(note);
+}
+
+function showModelSummary(panel) {
+    const heading = document.createElement("h4");
+    heading.className = "ml-section-title";
+    heading.textContent = "Model Status";
+    panel.appendChild(heading);
+
+    const status = document.createElement("p");
+    status.className = "ml-model-note";
+    status.textContent = modelInfo?.loaded
+        ? "XGBoost model loaded and ready for feature-based inference."
+        : "XGBoost model is not loaded. Check backend model status.";
+    panel.appendChild(status);
+
+    const metrics = modelInfo?.mean_spatial_cv;
+    if (metrics) {
+        const summary = document.createElement("p");
+        summary.className = "ml-model-note";
+        summary.textContent =
+            `5-fold spatial CV — AUC ${Number(metrics.auc).toFixed(4)}, ` +
+            `Accuracy ${Number(metrics.accuracy).toFixed(4)}, ` +
+            `F1 ${Number(metrics.f1).toFixed(4)}.`;
+        panel.appendChild(summary);
+    }
 }
 
 function showWelcome() {
@@ -356,21 +300,20 @@ function showWelcome() {
 
     const paragraph = document.createElement("p");
     paragraph.textContent =
-        "Select an Upazila on the map to inspect its ML statistics.";
+        "Select an Upazila on the map to inspect its precomputed susceptibility statistics.";
 
     panel.append(heading, paragraph);
+    showModelSummary(panel);
+    showImportance(panel);
 }
 
 function addDetail(label, value) {
     const box = document.createElement("div");
     box.className = "ml-stat";
-
     const small = document.createElement("small");
     small.textContent = label;
-
     const strong = document.createElement("strong");
     strong.textContent = String(value);
-
     box.append(small, strong);
     $("ml-details").appendChild(box);
 }
@@ -380,13 +323,10 @@ function showDetails(properties) {
     panel.replaceChildren();
 
     const title = document.createElement("h3");
-    title.textContent =
-        properties.upazila + ", " + properties.district;
-
+    title.textContent = properties.upazila + ", " + properties.district;
     panel.appendChild(title);
 
     const score = Number(properties.mean_score);
-
     addDetail("Mean susceptibility score", score.toFixed(4));
     addDetail("Mean score category", category(score));
 
@@ -399,47 +339,25 @@ function showDetails(properties) {
 
     const dominant = properties.dominant_class ||
         Object.keys(classFields).reduce((best, name) =>
-            Number(properties[classFields[name]]) >
-            Number(properties[classFields[best]])
+            Number(properties[classFields[name]]) > Number(properties[classFields[best]])
                 ? name : best
         , "Low");
 
     addDetail("Dominant pixel class", dominant);
+    addDetail("High + Very High pixel share", percentage(properties.high_very_high_pct));
+    addDetail("Observed flooded pixels - 2022", percentage(properties.observed_flood22_pct));
+    addDetail("Observed flooded pixels - 2024", percentage(properties.observed_flood24_pct));
+    addDetail("Census population", Number(properties.population).toLocaleString());
+    addDetail("Valid raster coverage", percentage(properties.coverage_pct));
 
-    addDetail(
-        "High + Very High pixel share",
-        percentage(properties.high_very_high_pct)
-    );
-
-    addDetail(
-        "Observed flooded pixels - 2022",
-        percentage(properties.observed_flood22_pct)
-    );
-
-    addDetail(
-        "Observed flooded pixels - 2024",
-        percentage(properties.observed_flood24_pct)
-    );
-
-    addDetail(
-        "Census population",
-        Number(properties.population).toLocaleString()
-    );
-
-    addDetail(
-        "Valid raster coverage",
-        percentage(properties.coverage_pct)
-    );
+    showModelSummary(panel);
+    showImportance(panel);
 }
 
 function fillDistricts() {
     const select = $("ml-district");
-
     select.innerHTML = '<option value="">All Districts</option>';
-
-    const districts = [
-        ...new Set(allRecords.map(row => row.district))
-    ].sort();
+    const districts = [...new Set(allRecords.map(row => row.district))].sort();
 
     districts.forEach(district => {
         const option = document.createElement("option");
@@ -452,82 +370,55 @@ function fillDistricts() {
 function fillUpazilas() {
     const district = $("ml-district").value;
     const select = $("ml-upazila");
-
     select.innerHTML = '<option value="">Select Upazila</option>';
 
     allRecords.forEach(record => {
         if (district && record.district !== district) return;
-
         const option = document.createElement("option");
         option.value = record.district + "|" + record.upazila;
         option.textContent = record.upazila;
-
         select.appendChild(option);
     });
 }
 
 function findLayer(district, upazila) {
     let selected = null;
-
     if (!geoLayer) return null;
-
     geoLayer.eachLayer(layer => {
         const p = layer.feature.properties;
-
-        if (p.district === district && p.upazila === upazila) {
-            selected = layer;
-        }
+        if (p.district === district && p.upazila === upazila) selected = layer;
     });
-
     return selected;
 }
 
 function selectUpazila(district, upazila) {
     const layer = findLayer(district, upazila);
-
     if (!layer) return;
 
-    if (selectedLayer) {
-        geoLayer.resetStyle(selectedLayer);
-    }
-
+    if (selectedLayer) geoLayer.resetStyle(selectedLayer);
     selectedLayer = layer;
 
     $("ml-district").value = district;
     fillUpazilas();
-
     $("ml-upazila").value = district + "|" + upazila;
 
     const properties = layer.feature.properties;
-
     showDetails(properties);
 
-    // Send selected Upazila data to Three.js.
     if (selectionHandler) {
         selectionHandler({
             district: properties.district,
             upazila: properties.upazila,
             mean_score: Number(properties.mean_score),
-            high_very_high_pct:
-                Number(properties.high_very_high_pct),
-            dominant_class:
-                properties.dominant_class ||
+            high_very_high_pct: Number(properties.high_very_high_pct),
+            dominant_class: properties.dominant_class ||
                 category(Number(properties.mean_score))
         });
     }
 
-    layer.setStyle({
-        color:"#ffffff",
-        weight:3,
-        fillOpacity:0.9
-    });
-
+    layer.setStyle({ color:"#ffffff", weight:3, fillOpacity:0.9 });
     layer.bringToFront();
-
-    map.fitBounds(layer.getBounds(), {
-        padding:[35,35],
-        maxZoom:11
-    });
+    map.fitBounds(layer.getBounds(), { padding:[35,35], maxZoom:11 });
 }
 
 function createMap() {
@@ -536,31 +427,18 @@ function createMap() {
         map = null;
     }
 
-    const mapElement = $("ml-map");
+    map = L.map($("ml-map"), { preferCanvas:true, zoomControl:true });
 
-    map = L.map(mapElement, {
-        preferCanvas:true,
-        zoomControl:true
-    });
-
-    L.tileLayer(
-        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        {
-            maxZoom:18,
-            attribution:"&copy; OpenStreetMap contributors"
-        }
-    ).addTo(map);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom:18,
+        attribution:"&copy; OpenStreetMap contributors"
+    }).addTo(map);
 
     const canvas = L.canvas({padding:0.5});
-
     geoLayer = L.geoJSON(cachedGeoJSON, {
         renderer:canvas,
-
         style(feature) {
-            const level = category(
-                Number(feature.properties.mean_score)
-            );
-
+            const level = category(Number(feature.properties.mean_score));
             return {
                 color:"#294238",
                 weight:1,
@@ -568,77 +446,58 @@ function createMap() {
                 fillOpacity:0.72
             };
         },
-
         onEachFeature(feature, layer) {
             const p = feature.properties;
-
-            layer.bindTooltip(
-                p.upazila + " (" + p.district + ")",
-                {sticky:true}
-            );
-
-            layer.on("click", () => {
-                selectUpazila(p.district, p.upazila);
-            });
+            layer.bindTooltip(p.upazila + " (" + p.district + ")", {sticky:true});
+            layer.on("click", () => selectUpazila(p.district, p.upazila));
         }
     }).addTo(map);
 
-    map.fitBounds(geoLayer.getBounds(), {
-        padding:[25,25]
-    });
+    map.fitBounds(geoLayer.getBounds(), { padding:[25,25] });
 }
 
 async function loadMLData() {
     if (cachedGeoJSON) return;
-
     if (!dataPromise) {
         dataPromise = (async () => {
             $("ml-status").textContent = "Checking ML backend...";
-
             const health = await getHealth();
+            if (health.status !== "healthy") throw new Error("ML backend is not healthy.");
 
-            if (health.status !== "healthy") {
-                throw new Error("ML backend is not healthy.");
-            }
-
-            $("ml-status").textContent = "Loading 38 Upazilas...";
-
-            const [result, geojson, config] = await Promise.all([
+            $("ml-status").textContent = "Loading geographic and model data...";
+            const [result, geojson, config, info, importance] = await Promise.all([
                 getAllUpazilas(),
                 getFloodGeoJSON(),
-                getThresholds()
+                getThresholds(),
+                getModelInfo(),
+                getModelFeatureImportance().catch(error => ({
+                    features: [],
+                    note: error.message
+                }))
             ]);
 
-            if (
-                result.count !== 38 ||
-                geojson.features?.length !== 38
-            ) {
+            if (result.count !== 38 || geojson.features?.length !== 38) {
                 throw new Error("Expected 38 Upazilas.");
             }
 
             allRecords = result.results;
             thresholds = config;
             cachedGeoJSON = geojson;
+            modelInfo = info;
+            featureImportance = importance;
 
             fillDistricts();
             fillUpazilas();
-
-            console.log(
-                "EcoQuest ML data loaded:",
-                result.count,
-                "Upazilas"
-            );
+            console.log("EcoQuest ML data loaded:", result.count, "Upazilas");
         })().finally(() => {
             dataPromise = null;
         });
     }
-
     await dataPromise;
 }
 
 export async function openMLMap() {
     createLayout();
-
     isOpen = true;
 
     if (!overlay.style.display || overlay.style.display === "none") {
@@ -649,51 +508,22 @@ export async function openMLMap() {
     document.body.style.overflow = "hidden";
 
     try {
-        if (!cachedGeoJSON) {
-            $("ml-status").textContent = "Connecting to ML backend...";
-            await loadMLData();
-        }
-
-        if (!isOpen) return;
-
-        $("ml-status").textContent =
-            "Connected | 38 Upazilas | XGBoost susceptibility";
-
+        await loadMLData();
         createMap();
-
-        requestAnimationFrame(() => {
-            if (map && isOpen) {
-                map.invalidateSize(true);
-            }
-        });
-
         showWelcome();
-
+        $("ml-status").textContent = "38 Upazilas loaded | XGBoost model: " +
+            (modelInfo?.loaded ? "READY" : "UNAVAILABLE");
+        setTimeout(() => map?.invalidateSize(true), 100);
     } catch (error) {
-        console.error("EcoQuest ML Map Error:", error);
-
-        $("ml-status").textContent = "Connection failed";
-
-        const panel = $("ml-details");
-        panel.textContent =
-            "Could not load ML map: " + error.message +
-            ". Check that FastAPI is running on port 8000.";
+        console.error("EcoQuest ML map error:", error);
+        $("ml-status").textContent = "Backend connection failed: " + error.message;
+        showWelcome();
     }
 }
 
-export function closeMLMap() {
-    isOpen = false;
-
-    if (map) {
-        map.remove();
-        map = null;
-        geoLayer = null;
-        selectedLayer = null;
-    }
-
-    if (overlay) {
-        overlay.style.display = "none";
-    }
-
+function closeMLMap() {
+    if (!overlay) return;
+    overlay.style.display = "none";
     document.body.style.overflow = previousOverflow;
+    isOpen = false;
 }
