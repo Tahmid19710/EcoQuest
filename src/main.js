@@ -2703,7 +2703,12 @@ async function initializeGame(){
 
         // Initialize explainable environmental assistant.
         environmentAssistant = createEnvironmentAssistant({
-            getStats: () => ({ ...stats })
+            getStats: () => ({
+                ...stats,
+                selectedMLArea: selectedMLArea
+                    ? { ...selectedMLArea }
+                    : null
+            })
         });
         // Apply current weather to lighting.
         lightingSystem.setRainIntensity(stats.rainfall);
