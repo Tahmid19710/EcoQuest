@@ -11,6 +11,7 @@ from app.model_service import (
     ModelUnavailableError,
     get_feature_importance,
     get_model_info,
+    explain_features,
     is_model_loaded,
     load_model,
     predict_features,
@@ -384,6 +385,23 @@ def model_predict(payload: ModelPredictionInput):
     try:
         return predict_features(payload.dict())
     except ModelUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+# =====================================================
+# 11. SHAP LOCAL EXPLANATION
+# =====================================================
+
+@app.post("/api/model/explain")
+def model_explain(payload: ModelPredictionInput):
+
+    try:
+        return explain_features(payload.dict())
+    except ModelUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except (KeyError, TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
