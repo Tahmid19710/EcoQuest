@@ -37,3 +37,11 @@ export async function getFloodGeoJSON() {
 export async function getThresholds() {
     return request("/api/config/thresholds");
 }
+
+export async function getModelInfo() {
+    return request("/api/model/info");
+}
+
+export async function getFeatureImportance() {
+    return request("/api/model/feature-importance");
+}
