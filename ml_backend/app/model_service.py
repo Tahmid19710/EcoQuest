@@ -199,3 +199,63 @@ def get_feature_importance() -> dict:
         ),
         "features": results,
     }
+
+def explain_features(values: dict) -> dict:
+    """Return per-feature SHAP contributions for one supplied feature vector."""
+    if _model is None:
+        raise ModelUnavailableError("XGBoost model is not loaded.")
+
+    try:
+        import numpy as np
+        import shap
+    except ImportError as exc:
+        raise RuntimeError(
+            "SHAP is not installed. Install the backend requirements."
+        ) from exc
+
+    ordered_values = {name: float(values[name]) for name in FEATURES}
+    ordered_values["lulc"] = int(round(ordered_values["lulc"]))
+
+    frame = pd.DataFrame(
+        [[ordered_values[name] for name in FEATURES]],
+        columns=FEATURES,
+    )
+
+    explainer = shap.TreeExplainer(_model)
+    explanation = explainer(frame)
+
+    raw_values = np.asarray(explanation.values)
+    if raw_values.ndim == 3:
+        raw_values = raw_values[0, :, -1]
+    elif raw_values.ndim == 2:
+        raw_values = raw_values[0]
+
+    base_values = np.asarray(explanation.base_values)
+    base_value = float(base_values.reshape(-1)[-1])
+
+    contributions = [
+        {
+            "feature": feature,
+            "value": ordered_values[feature],
+            "shap_value": round(float(raw_values[index]), 8),
+        }
+        for index, feature in enumerate(FEATURES)
+    ]
+    contributions.sort(
+        key=lambda item: abs(item["shap_value"]),
+        reverse=True,
+    )
+
+    return {
+        "explanation_type": "SHAP TreeExplainer",
+        "output_scale": "raw model margin (log-odds)",
+        "base_value": round(base_value, 8),
+        "sum_of_contributions": round(float(raw_values.sum()), 8),
+        "model_output": round(base_value + float(raw_values.sum()), 8),
+        "contributions": contributions,
+        "note": (
+            "Positive SHAP values move the raw model output toward class 1; "
+            "negative values move it toward class 0. These are model "
+            "contributions, not causal effects."
+        ),
+    }
