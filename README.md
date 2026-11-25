@@ -64,6 +64,7 @@ API documentation: http://127.0.0.1:8000/docs
 | GET | `/api/model/info` | Model provenance and spatial-CV metadata |
 | GET | `/api/model/feature-importance` | Global XGBoost gain importance |
 | POST | `/api/model/predict` | Predict the binary training target from 11 supplied features |
+| POST | `/api/model/explain` | Local SHAP TreeExplainer contributions for 11 supplied features |
 
 ### Prediction request
 
@@ -85,7 +86,7 @@ API documentation: http://127.0.0.1:8000/docs
 
 The values above are illustrative request-format examples only, not measured values for any real location. Do not use them as a scientific prediction.
 
-The API returns the positive-class probability and a default 0.50 decision. That cutoff is not a calibrated public-warning threshold.
+The API returns the positive-class probability and a default 0.50 decision. That cutoff is not a calibrated public-warning threshold. The explanation endpoint returns SHAP contributions on the raw model margin (log-odds) scale; positive contributions move the output toward class 1 and negative contributions toward class 0. SHAP values explain model behavior, not causal effects.
 
 ## Validation results
 
@@ -104,4 +105,5 @@ These are the previously recorded cross-validation results, not a new evaluation
 - The tracked data package contains precomputed susceptibility rasters and upazila summaries; the complete set of 11 predictor rasters has not yet been confirmed in the repository.
 - Therefore, full-coverage raster inference and per-pixel SHAP mapping are not claimed as implemented.
 - XGBoost gain importance is provided as a global model diagnostic. It is not SHAP and does not establish causal influence.
+- Local SHAP explanation is available for a supplied 11-feature vector when the SHAP dependency is installed. It does not provide a map-wide SHAP raster.
 - The map represents susceptibility, not current water levels or real-time flood alerts.
