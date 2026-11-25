@@ -1,4 +1,4 @@
-﻿const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = "http://127.0.0.1:8000";
 
 async function request(path) {
     const response = await fetch(`${API_BASE}${path}`);
@@ -37,10 +37,17 @@ export async function getFloodGeoJSON() {
 export async function getThresholds() {
     return request("/api/config/thresholds");
 }
+// =====================================================
+// XGBOOST MODEL INFORMATION
+// =====================================================
 
 export async function getModelInfo() {
     return request("/api/model/info");
 }
+
+// =====================================================
+// GLOBAL FEATURE IMPORTANCE
+// =====================================================
 
 export async function getFeatureImportance() {
     return request("/api/model/feature-importance");
