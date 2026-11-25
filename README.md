@@ -2,9 +2,14 @@
 
 EcoQuest is a Three.js city-building environmental simulation with a FastAPI flood-intelligence backend for Sylhet Division, Bangladesh.
 
-## Current ML scope
+## Current ML and game-simulation scope
 
 - Geographic coverage: 38 upazilas in Sylhet Division.
+- The Three.js game has a dynamic, rule-based simulation using rainfall, green coverage and drainage.
+- Selecting an Upazila applies the existing historical susceptibility layer as a geographic game-risk modifier.
+- The Environmental Assistant shows the selected area's historical susceptibility context, explains local simulation drivers, previews drainage/tree actions, and can invoke the game's existing drainage and tree-placement controls.
+- The assistant's dynamic game-risk score is a simulation indicator, not a calibrated flood probability or a live forecast.
+- The XGBoost classifier remains a separate feature-based model for its historical binary target; it is not silently treated as a per-Upazila or real-time prediction.
 - Precomputed map layer: upazila flood-susceptibility statistics and simplified GeoJSON.
 - ML model: saved XGBoost binary classifier.
 - Training samples: 20,000.
