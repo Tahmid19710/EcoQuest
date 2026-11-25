@@ -1,23 +1,12 @@
-const API_BASE = import.meta.env.VITE_ECOQUEST_API_URL || "http://127.0.0.1:8000";
+const API_BASE = "http://127.0.0.1:8000";
 
-async function request(path, options = {}) {
-    const response = await fetch(`${API_BASE}${path}`, {
-        headers: {
-            "Content-Type": "application/json",
-            ...options.headers
-        },
-        ...options
-    });
+async function request(path) {
+    const response = await fetch(`${API_BASE}${path}`);
 
     if (!response.ok) {
-        let detail = `EcoQuest API error: ${response.status}`;
-        try {
-            const body = await response.json();
-            if (body.detail) detail = body.detail;
-        } catch {
-            // Keep the HTTP status message when the response is not JSON.
-        }
-        throw new Error(detail);
+        throw new Error(
+            `EcoQuest API error: ${response.status}`
+        );
     }
 
     return response.json();
@@ -32,7 +21,9 @@ export async function getAllUpazilas() {
 }
 
 export async function getUpazila(name) {
-    return request(`/api/upazilas/${encodeURIComponent(name)}`);
+    return request(
+        `/api/upazilas/${encodeURIComponent(name)}`
+    );
 }
 
 export async function getRiskSummary() {
@@ -46,25 +37,18 @@ export async function getFloodGeoJSON() {
 export async function getThresholds() {
     return request("/api/config/thresholds");
 }
+// =====================================================
+// XGBOOST MODEL INFORMATION
+// =====================================================
 
 export async function getModelInfo() {
     return request("/api/model/info");
 }
 
-export async function getModelFeatureImportance() {
+// =====================================================
+// GLOBAL FEATURE IMPORTANCE
+// =====================================================
+
+export async function getFeatureImportance() {
     return request("/api/model/feature-importance");
-}
-
-export async function predictFloodTarget(features) {
-    return request("/api/model/predict", {
-        method: "POST",
-        body: JSON.stringify(features)
-    });
-}
-
-export async function explainFloodPrediction(features) {
-    return request("/api/model/explain", {
-        method: "POST",
-        body: JSON.stringify(features)
-    });
 }
