@@ -1584,7 +1584,15 @@ function placeObject(tile){
 
     stats.credits-=data.cost;
 
-    Object.assign(stats, applyBuildEffects(stats, data, 1));
+    const beforeBuild = { ...stats };
+    const afterBuild = applyBuildEffects(stats, data, 1);
+    const appliedEffects = {};
+
+    ['green','happiness','pollution','energy','waste'].forEach(key => {
+        appliedEffects[key] = afterBuild[key] - beforeBuild[key];
+    });
+
+    Object.assign(stats, afterBuild);
 
     placedItems.push({
         district:tile.district,
@@ -1594,6 +1602,7 @@ function placeObject(tile){
         z:tile.z,
         type:selectedTool,
         cost:data.cost,
+        effects:appliedEffects,
         object
     });
 
@@ -1624,7 +1633,10 @@ function removeObject(item){
 
     stats.credits+=Math.floor(item.cost*0.5);
 
-    Object.assign(stats, applyBuildEffects(stats, data, -1));
+    Object.assign(
+        stats,
+        applyBuildEffects(stats, item.effects || data, -1)
+    );
 
     updateEnvironment();
 
@@ -2198,7 +2210,8 @@ function saveGame(){
                 x:item.x,
                 z:item.z,
                 type:item.type,
-                cost:item.cost
+                cost:item.cost,
+                effects:item.effects || null
             })),
             missions: missionSystem ? missionSystem.getSaveData() : null,
             currentDistrict
