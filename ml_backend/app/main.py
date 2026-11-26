@@ -7,6 +7,7 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from dotenv import load_dotenv
 
 from app.model_service import (
     ModelUnavailableError,
@@ -24,6 +25,7 @@ from app.model_service import (
 # =====================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 DATA_DIR = BASE_DIR / "data"
 
 CSV_PATH = DATA_DIR / "tables" / "EcoQuest_Upazila_Susceptibility.csv"
