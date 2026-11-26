@@ -3962,13 +3962,11 @@ async function initializeGame(){
             renderer
         );
 
-        // Start downloading GLB assets in the background. Do not block
-        // the initial city build or the first playable frame on large models.
-        let loadedCount=0;
-        const modelPreloadPromise=modelLibrary.preload();
+        const loadedCount=await modelLibrary.preload();
 
         console.log(
-            'EcoQuest asset loading started in background.'
+            'EcoQuest asset report:',
+            modelLibrary.getReport()
         );
 
         // Continuous ground covering the complete 10 x 7 zone world.
@@ -4059,30 +4057,13 @@ async function initializeGame(){
         updateEnvironment();
 
         message(
-            'EcoQuest is ready! 3D models are loading in the background.'
+            `${loadedCount}/7 realistic models loaded. EcoQuest is ready!`
         );
 
         console.log('EcoQuest 3D initialized.');
         console.log('Three.js version:',THREE.REVISION);
 
-        // Make the game playable immediately; report model availability when
-        // the background downloads finish. Until then, procedural fallbacks
-        // keep the original city layout visible and build tools usable.
         animate();
-
-        modelPreloadPromise.then(count=>{
-            loadedCount=count;
-            console.log(
-                'EcoQuest asset report:',
-                modelLibrary.getReport()
-            );
-            message(
-                loadedCount + '/7 realistic models loaded. EcoQuest is ready!'
-            );
-        }).catch(error=>{
-            console.warn('Background 3D model loading failed:',error);
-            message('EcoQuest is ready with procedural 3D models.');
-        });
 
     }catch(error){
 
