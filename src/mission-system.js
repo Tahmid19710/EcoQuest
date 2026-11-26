@@ -369,7 +369,9 @@ export function createMissionSystem({
             return;
         }
 
-        const mission = MISSIONS[completedCount];
+        const mission = started
+            ? MISSIONS[completedCount]
+            : MISSIONS[completedCount - 1];
 
         if (!started) {
             panel.innerHTML = `
@@ -449,6 +451,12 @@ export function createMissionSystem({
 
     function bindToggle() {
         const toggle = panel.querySelector('.eco-mission-toggle');
+        const body = panel.querySelector('.eco-mission-body');
+
+        if (body) {
+            body.hidden = panel.classList.contains('collapsed');
+        }
+
         if (toggle) {
             toggle.addEventListener('click', () => {
                 panel.classList.toggle('collapsed');
