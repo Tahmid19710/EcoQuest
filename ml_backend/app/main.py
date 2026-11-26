@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import os
 
 import pandas as pd
 
@@ -106,15 +107,25 @@ app = FastAPI(
 )
 
 
-# Development CORS configuration.
-# Restrict origins before public deployment.
+# Development defaults allow the local Vite frontend only.
+# Set ECOQUEST_CORS_ORIGINS to a comma-separated list of trusted
+# frontend origins before deploying the API publicly.
+
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "ECOQUEST_CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",")
+    if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"]
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"]
 )
 
 
