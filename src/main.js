@@ -380,8 +380,8 @@ button{font-family:inherit}
  .game-stage{height:65vh;min-height:430px}
  .zone-selector{width:min(220px,calc(100% - 24px))}
  .zone-selector select{font-size:10px;padding:8px}
- .game-alert{top:66px;font-size:9px}
- .camera-controls{top:102px}
+ .game-alert{top:82px;font-size:9px}
+ .camera-controls{top:116px}
 }
 `;
 
