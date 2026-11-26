@@ -2,7 +2,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { ModelLibrary } from './model-loader.js';
-import { createNaturalTerrain } from './terrain-system.js';
 import { createLightingSystem } from './lighting-system.js';
 import { createEnvironmentAssistant } from './environment-assistant.js';
 import { createMissionSystem } from './mission-system.js';
@@ -216,6 +215,7 @@ let missionSystem;
 
 
 let selectedTool = 'oak';
+let placementRotation = 0;
 let currentDistrict = 'central';
 let isCityOverview = true;
 const riverBridges = [];
@@ -648,7 +648,7 @@ app.innerHTML = `
   <nav class="navigation">
    <span class="bar-label">EXPLORE</span>
    <span style="font-size:10px;color:#d2e7ce;font-weight:800">
-    70 CONNECTED ZONES · SELECT ANY ZONE FROM THE TOP-RIGHT MENU
+    SELECT A ZONE → CHOOSE A BUILD TOOL → CLICK ANY OPEN SPOT TO PLACE · USE REMOVE TO DELETE
    </span>
   </nav>
 
@@ -705,6 +705,7 @@ app.innerHTML = `
    <button class="tool-btn" data-tool="solar"><span>☀️ Solar</span><small>25 Credits</small></button>
    <button class="tool-btn" data-tool="lamp"><span>💡 Lamp</span><small>18 Credits</small></button>
    <button class="tool-btn" data-tool="remove"><span>🗑️ Remove</span><small>Refund 50%</small></button>
+   <button class="action-btn" id="rotate-building" type="button">↻ Rotate 90°</button>
 
    <span class="bar-label">WEATHER</span>
 
@@ -2260,11 +2261,14 @@ function buildFarm(d){
 
 function createBuildGrid(d){
 
-    const columns=5;
-    const rows=4;
-    const spacing=55;
-    const startX=d.x-110;
-    const startZ=d.z-82;
+    // A visible placement guide, not a restrictive tile-based build system.
+    // Objects can be placed anywhere inside the zone by clicking the ground.
+    const columns=10;
+    const rows=10;
+    const spacing=65;
+    const tileSize=61;
+    const startX=d.x-((columns-1)*spacing)/2;
+    const startZ=d.z-((rows-1)*spacing)/2;
 
     for(let row=0;row<rows;row++){
         for(let col=0;col<columns;col++){
@@ -2273,18 +2277,18 @@ function createBuildGrid(d){
 
             const tile=addPlane(
                 x,0.22,z,
-                51,51,
+                tileSize,tileSize,
                 materials.tile
             );
 
             tile.userData={
-                type:'buildTile',
+                type:'buildGuide',
                 district:d.id,
                 row,
                 col,
                 x,
                 z,
-                waterBlocked:isWaterPosition(x,z,30),
+                waterBlocked:isWaterPosition(x,z,18),
                 borderMesh:null
             };
             tile.visible=false;
@@ -2292,12 +2296,12 @@ function createBuildGrid(d){
 
             const border=addMesh(
                 new THREE.EdgesGeometry(
-                    new THREE.BoxGeometry(51,0.12,51)
+                    new THREE.BoxGeometry(tileSize,0.12,tileSize)
                 ),
                 new THREE.LineBasicMaterial({
                     color:0xd3e6a6,
                     transparent:true,
-                    opacity:0.3
+                    opacity:0.24
                 }),
                 x,0.25,z
             );
@@ -2330,16 +2334,9 @@ function buildDistricts(){
         addBox(d.x-halfZone,0.13,d.z,2,0.12,740,boundaryMaterial);
         addBox(d.x+halfZone,0.13,d.z,2,0.12,740,boundaryMaterial);
 
-        switch(d.type){
-
-            case 'forest':buildForest(d);break;
-            case 'downtown':buildDowntown(d);break;
-            case 'riverside':buildRiverside(d);break;
-            case 'park':buildPark(d);break;
-            case 'residential':buildResidential(d);break;
-            case 'industrial':buildIndustrial(d);break;
-            case 'farm':buildFarm(d);break;
-        }
+        // All 70 zones start as clear, empty plots.
+        // The player chooses what to build in every zone; no houses,
+        // factories, ponds, paths or decorative trees are pre-placed.
 
         createBuildGrid(d);
 
@@ -2400,13 +2397,13 @@ function createBuildObject(type,x,z){
 // 23. PLACEMENT AND REMOVAL
 // ============================================================
 
-function findOccupiedTile(tile){
-
-    return placedItems.find(item=>
-        item.district===tile.district &&
-        item.row===tile.row &&
-        item.col===tile.col
-    );
+function getPlacementRadius(type){
+    const radii={
+        oak:9,pine:9,blossom:8,flower:7,
+        house:13,apartment:17,factory:24,
+        bench:7,solar:8,lamp:4
+    };
+    return radii[type]||10;
 }
 
 function getZoneDesignScore(zoneId){
@@ -2429,94 +2426,113 @@ function getZoneDesignScore(zoneId){
     );
 }
 
-function placeObject(tile){
+function placeObjectAt(worldX,worldZ){
 
-    if(tile.userData.waterBlocked||isWaterPosition(tile.x,tile.z,30)){
-        message('This build tile is inside a water channel or lake. Choose dry land.');
+    if(isCityOverview){
+        message('Select one of the 70 zones first, then choose where to build.');
         return;
     }
 
-    const existing=findOccupiedTile(tile);
-
-    if(selectedTool==='remove'){
-
-        if(!existing){
-            message('No player-built object on this tile.');
-            return;
-        }
-
-        removeObject(existing);
-        return;
-    }
-
-    if(existing){
-        message('This tile is occupied. Choose another tile.');
+    const district=districts.find(item=>item.id===currentDistrict);
+    if(!district){
+        message('Select a zone before placing buildings.');
         return;
     }
 
     const data=tools[selectedTool];
+    if(!data||selectedTool==='remove'||selectedTool==='lamp') return;
 
-    if(!data) return;
+    // Fine 5-unit snapping keeps layouts tidy without restricting placement to tiles.
+    const x=Math.round(worldX/5)*5;
+    const z=Math.round(worldZ/5)*5;
+    const radius=getPlacementRadius(selectedTool);
+    const halfZone=370-radius-8;
+
+    if(
+        Math.abs(x-district.x)>halfZone||
+        Math.abs(z-district.z)>halfZone
+    ){
+        message('Choose a position inside the selected zone boundary.');
+        return;
+    }
+
+    if(isWaterPosition(x,z,radius+5)){
+        message('This position is inside the main river. Choose dry land.');
+        return;
+    }
+
+    const overlap=placedItems.find(item=>{
+        if(item.roadside||item.district!==district.id) return false;
+        const otherRadius=item.radius||getPlacementRadius(item.type);
+        return Math.hypot(item.x-x,item.z-z)<radius+otherRadius+3;
+    });
+
+    if(overlap){
+        message('That spot is too close to another object. Choose an open area.');
+        return;
+    }
 
     if(stats.credits<data.cost){
         message(`Not enough credits! You need ${data.cost} credits.`);
         return;
     }
 
-    const object=createBuildObject(selectedTool,tile.x,tile.z);
-
+    const object=createBuildObject(selectedTool,x,z);
     if(!object){
-        message('Object creation failed.');
+        message('Object creation failed. Try another dry location.');
         return;
     }
 
+    object.rotation.y=placementRotation;
+
     stats.credits-=data.cost;
 
-    const beforeBuild = { ...stats };
-    const afterBuild = applyBuildEffects(stats, data, 1);
-    const appliedEffects = {};
+    const beforeBuild={...stats};
+    const afterBuild=applyBuildEffects(stats,data,1);
+    const appliedEffects={};
 
-    ['green','happiness','pollution','energy','waste'].forEach(key => {
-        appliedEffects[key] = afterBuild[key] - beforeBuild[key];
+    ['green','happiness','pollution','energy','waste'].forEach(key=>{
+        appliedEffects[key]=afterBuild[key]-beforeBuild[key];
     });
 
-    Object.assign(stats, afterBuild);
+    Object.assign(stats,afterBuild);
 
     placedItems.push({
-        district:tile.district,
-        row:tile.row,
-        col:tile.col,
-        x:tile.x,
-        z:tile.z,
+        district:district.id,
+        row:-1,
+        col:placedItems.length+1,
+        x,
+        z,
         type:selectedTool,
         cost:data.cost,
         effects:appliedEffects,
+        rotation:placementRotation,
+        radius,
         object
     });
 
     const plantingRewards={oak:12,pine:14,blossom:16,flower:7};
-    const plantingReward=plantingRewards[selectedTool] || 0;
+    const plantingReward=plantingRewards[selectedTool]||0;
     stats.credits+=plantingReward;
 
-    const designScore=getZoneDesignScore(tile.district);
+    const designScore=getZoneDesignScore(district.id);
     let designBonus=0;
-    if(designScore>=80 && !designBonusClaimed.has(tile.district)){
+    if(designScore>=80&&!designBonusClaimed.has(district.id)){
         designBonus=100;
-        designBonusClaimed.add(tile.district);
+        designBonusClaimed.add(district.id);
         stats.credits+=designBonus;
     }
 
     updateEnvironment();
 
-    const district=districts.find(d=>d.id===tile.district);
     const rewards=[];
     if(plantingReward) rewards.push(`+${plantingReward} planting credits`);
-    if(designBonus) rewards.push(`🏆 +${designBonus} beautiful-zone design bonus`);
+    if(designBonus) rewards.push(`🏆 +${designBonus} design bonus`);
     const rewardText=rewards.length?` ${rewards.join(' · ')}.`:'';
 
     message(
-        `${data.name} built in Zone ${district.zoneNo} — ${district.name}. `+
-        `Design score: ${designScore}/100.${rewardText}`
+        `${data.name} placed in Zone ${district.zoneNo} — ${district.name}. `+
+        `Click another open spot to continue building.${rewardText}`
     );
 }
 
@@ -2632,13 +2648,12 @@ function removeObject(item){
 
     placedItems=placedItems.filter(p=>p!==item);
 
-    const data=tools[item.type];
-
+    const data=tools[item.type]||{name:item.type};
     stats.credits+=Math.floor(item.cost*0.5);
 
     Object.assign(
         stats,
-        applyBuildEffects(stats, item.effects || data, -1)
+        applyBuildEffects(stats,item.effects||data,-1)
     );
 
     updateEnvironment();
@@ -2674,9 +2689,10 @@ function setupInteraction(){
 
         raycaster.setFromCamera(pointer,camera);
 
+        // Street lamps remain a dedicated roadside tool and snap to arterial roads.
         if(selectedTool==='lamp'){
             const groundPlane=new THREE.Plane(
-                new THREE.Vector3(0,1,0),0
+                new THREE.Vector3(0,1,0),-0.05
             );
             const groundPoint=new THREE.Vector3();
             if(raycaster.ray.intersectPlane(groundPlane,groundPoint)){
@@ -2685,35 +2701,46 @@ function setupInteraction(){
             return;
         }
 
+        // Remove any player-placed object by clicking directly on its model.
         if(selectedTool==='remove'){
-            const roadside=placedItems.filter(item=>item.roadside);
-            const lampHits=raycaster.intersectObjects(
-                roadside.map(item=>item.object),true
-            );
-            if(lampHits.length){
-                let hitObject=lampHits[0].object;
-                const item=roadside.find(candidate=>{
-                    let node=hitObject;
-                    while(node){
-                        if(node===candidate.object) return true;
-                        node=node.parent;
-                    }
-                    return false;
-                });
-                if(item){
-                    removeObject(item);
-                    return;
-                }
+            const objects=placedItems
+                .filter(item=>item.object)
+                .map(item=>item.object);
+            const hits=raycaster.intersectObjects(objects,true);
+
+            if(!hits.length){
+                message('Tap directly on a house, factory, tree, bench or other placed object to remove it.');
+                return;
             }
+
+            let hit=hits[0].object;
+            const item=placedItems.find(candidate=>{
+                let node=hit;
+                while(node){
+                    if(node===candidate.object) return true;
+                    node=node.parent;
+                }
+                return false;
+            });
+
+            if(item) removeObject(item);
+            return;
         }
 
-        const hits=raycaster.intersectObjects(buildTiles,false);
+        // Building placement is enabled only after opening an individual zone.
+        if(isCityOverview){
+            message('Select a zone from the top-right menu before building.');
+            return;
+        }
 
-        if(!hits.length) return;
+        const groundPlane=new THREE.Plane(
+            new THREE.Vector3(0,1,0),-0.05
+        );
+        const groundPoint=new THREE.Vector3();
 
-        const tile=hits[0].object.userData;
-
-        if(tile.type==='buildTile') placeObject(tile);
+        if(raycaster.ray.intersectPlane(groundPlane,groundPoint)){
+            placeObjectAt(groundPoint.x,groundPoint.z);
+        }
     });
 }
 
@@ -2806,7 +2833,7 @@ function goToDistrict(id){
     controls.update();
 
     hud['location-label'].textContent =
-        `ZONE ${String(d.zoneNo).padStart(2,'0')} · ${d.icon} ${d.name}`;
+        `ZONE ${String(d.zoneNo).padStart(2,'0')} · ${d.icon} ${d.name} · FREE BUILD MODE`;
 
     const zoneSelect=document.getElementById('zone-select');
     if(zoneSelect) zoneSelect.value=id;
@@ -3245,10 +3272,13 @@ function renderHUD(){
         btn.classList.toggle('active',btn.dataset.tool===selectedTool);
     });
 
+    const rotationLabel=` · ${Math.round(placementRotation*180/Math.PI)}°`;
     hud['selected-tool'].textContent=
         selectedTool==='remove'
             ?'Selected: Remove Tool'
-            :'Selected: '+tools[selectedTool].name;
+            :selectedTool==='lamp'
+                ?'Selected: Street Lamp'
+                :'Selected: '+tools[selectedTool].name+rotationLabel;
 
     updateMLAreaIndicator();
 }
@@ -3395,7 +3425,9 @@ function saveGame(){
                 type:item.type,
                 cost:item.cost,
                 effects:item.effects || null,
-                roadside:item.roadside || false
+                roadside:item.roadside || false,
+                rotation:item.rotation||0,
+                radius:item.radius||getPlacementRadius(item.type)
             })),
             missions: missionSystem ? missionSystem.getSaveData() : null,
             currentDistrict
@@ -3457,9 +3489,11 @@ function loadGame(){
             );
 
             if(!object) return;
+            object.rotation.y=Number(saved.rotation)||0;
 
             placedItems.push({
                 ...saved,
+                radius:saved.radius||getPlacementRadius(saved.type),
                 district:nearestDistrict?.id||saved.district,
                 object
             });
@@ -3525,6 +3559,9 @@ function resetGame(){
     });
 
     selectedTool='oak';
+    placementRotation=0;
+    const rotateButton=document.getElementById('rotate-building');
+    if(rotateButton) rotateButton.textContent='↻ Rotate 90°';
 
     if (missionSystem) {
         missionSystem.reset();
@@ -3679,6 +3716,16 @@ function setupInterfaceEvents(){
             }else{
                 goToCityOverview();
             }
+        });
+    }
+
+    const rotateButton=document.getElementById('rotate-building');
+    if(rotateButton){
+        rotateButton.addEventListener('click',()=>{
+            placementRotation=(placementRotation+Math.PI/2)%(Math.PI*2);
+            const degrees=Math.round(placementRotation*180/Math.PI);
+            rotateButton.textContent=`↻ Rotation: ${degrees}°`;
+            message(`Next building rotation: ${degrees}°.`);
         });
     }
 
@@ -3930,12 +3977,7 @@ async function initializeGame(){
         buildRoadNetwork();
         buildDistricts();
 
-        // Procedural terrain avoids the main river; all zone interiors stay dry.
-        createNaturalTerrain(
-            scene,
-            districts,
-            (x,z)=>isWaterPosition(x,z,8)
-        );
+        // Zone interiors remain clear so the player can design every plot.
 
         // No lamps are pre-placed inside plots.
         // The Lamp tool snaps player placements to the retained arterial-road shoulders.
