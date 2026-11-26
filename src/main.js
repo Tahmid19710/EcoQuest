@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { ModelLibrary } from './model-loader.js';
+import { createNaturalTerrain } from './terrain-system.js';
 import { createLightingSystem } from './lighting-system.js';
 import { createEnvironmentAssistant } from './environment-assistant.js';
 import { createMissionSystem } from './mission-system.js';
@@ -209,6 +210,7 @@ const tools = {
 
 let scene, camera, renderer, controls, clock;
 let modelLibrary;
+let terrainSystem;
 let lightingSystem;
 let environmentAssistant;
 let missionSystem;
@@ -2334,9 +2336,18 @@ function buildDistricts(){
         addBox(d.x-halfZone,0.13,d.z,2,0.12,740,boundaryMaterial);
         addBox(d.x+halfZone,0.13,d.z,2,0.12,740,boundaryMaterial);
 
-        // All 70 zones start as clear, empty plots.
-        // The player chooses what to build in every zone; no houses,
-        // factories, ponds, paths or decorative trees are pre-placed.
+        // Preserve the original district identity and its pre-built homes,
+        // trees, parks, farms and industrial structures. The player can still
+        // freely customize the remaining open ground in every selected zone.
+        switch(d.type){
+            case 'forest':buildForest(d);break;
+            case 'downtown':buildDowntown(d);break;
+            case 'riverside':buildRiverside(d);break;
+            case 'park':buildPark(d);break;
+            case 'residential':buildResidential(d);break;
+            case 'industrial':buildIndustrial(d);break;
+            case 'farm':buildFarm(d);break;
+        }
 
         createBuildGrid(d);
 
@@ -3977,7 +3988,14 @@ async function initializeGame(){
         buildRoadNetwork();
         buildDistricts();
 
-        // Zone interiors remain clear so the player can design every plot.
+        // Restore the original natural ground cover around the pre-built
+        // structures. The terrain system keeps the central/building areas clear
+        // and avoids the main river, so open spaces remain available for players.
+        terrainSystem = createNaturalTerrain(
+            scene,
+            districts,
+            (x,z)=>isWaterPosition(x,z,8)
+        );
 
         // No lamps are pre-placed inside plots.
         // The Lamp tool snaps player placements to the retained arterial-road shoulders.
