@@ -457,7 +457,7 @@ app.innerHTML = `
   </nav>
 
   <section class="game-stage">
-   <div class="stage-location" id="location-label">ZONE 04 · 🌳 Central Park 01</div>
+   <div class="stage-location" id="location-label">ZONE 11 · 🌳 Central Park 01</div>
    <div class="zone-selector">
     <label for="zone-select">🗺️ SELECT A ZONE · 70 AVAILABLE</label>
     <select id="zone-select">${zoneOptions}</select>
@@ -2775,7 +2775,7 @@ async function initializeGame(){
             materials.grass
         );
 
-        // Generate roads and seven districts.
+        // Generate the road grid and all 70 zones.
         buildRoadNetwork();
         buildDistricts();
 
