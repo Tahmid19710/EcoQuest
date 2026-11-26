@@ -34,7 +34,7 @@ function createAsphaltTexture() {
     ctx.fillRect(0, 0, 512, 512);
 
     // Fine asphalt aggregate.
-    for (let i = 0; i < 42000; i++) {
+    for (let i = 0; i < 18000; i++) {
         const x = rng() * 512;
         const y = rng() * 512;
         const brightness = Math.floor(40 + rng() * 65);
@@ -48,7 +48,7 @@ function createAsphaltTexture() {
     }
 
     // Worn patches.
-    for (let i = 0; i < 90; i++) {
+    for (let i = 0; i < 48; i++) {
         const x = rng() * 512;
         const y = rng() * 512;
         const rx = 6 + rng() * 28;
@@ -65,7 +65,7 @@ function createAsphaltTexture() {
     // Subtle cracks.
     ctx.lineWidth = 0.7;
 
-    for (let i = 0; i < 17; i++) {
+    for (let i = 0; i < 9; i++) {
         let x = rng() * 512;
         let y = rng() * 512;
 
@@ -87,7 +87,7 @@ function createAsphaltTexture() {
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
     texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 8;
+    texture.anisotropy = 4;
     texture.minFilter = THREE.LinearMipmapLinearFilter;
     texture.magFilter = THREE.LinearFilter;
 
@@ -142,7 +142,7 @@ function createConcreteTexture() {
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
     texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 8;
+    texture.anisotropy = 4;
 
     return texture;
 }
@@ -174,8 +174,8 @@ export function makeRoadMaterial(width, length) {
 
     // Keep texture scale consistent in world units.
     map.repeat.set(
-        Math.max(1, width / 16),
-        Math.max(1, length / 16)
+        Math.max(1, width / 64),
+        Math.max(1, length / 80)
     );
 
     map.needsUpdate = true;
@@ -192,8 +192,8 @@ export function makeConcreteMaterial(width, length) {
     const map = getBaseTexture('concrete').clone();
 
     map.repeat.set(
-        Math.max(1, width / 12),
-        Math.max(1, length / 12)
+        Math.max(1, width / 64),
+        Math.max(1, length / 80)
     );
 
     map.needsUpdate = true;
