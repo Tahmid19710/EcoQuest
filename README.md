@@ -1,5 +1,7 @@
 # EcoQuest
 
+Proposal implementation checklist: [Proposal Traceability](docs/PROPOSAL_TRACEABILITY.md).
+
 EcoQuest is a Three.js city-building environmental simulation with a FastAPI flood-intelligence backend for Sylhet Division, Bangladesh.
 
 ## Current ML and game-simulation scope
