@@ -1,11 +1,14 @@
 from pathlib import Path
 import json
+import math
 import os
 
 import pandas as pd
 
 from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
@@ -129,6 +132,27 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type"]
 )
+
+
+def json_safe(value):
+    """Convert non-JSON values in validation errors to safe strings."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(request, exc):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": json_safe(exc.errors())}
+    )
 
 
 # =====================================================
