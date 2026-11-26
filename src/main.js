@@ -67,16 +67,16 @@ const districts = [
 ];
 
 const tools = {
-    oak:{name:'Oak Tree',cost:8,green:3,happiness:2,pollution:-1},
-    pine:{name:'Pine Tree',cost:10,green:4,happiness:2,pollution:-1},
-    blossom:{name:'Blossom Tree',cost:12,green:5,happiness:3,pollution:-1},
-    flower:{name:'Flower Garden',cost:5,green:1,happiness:2,pollution:0},
-    house:{name:'House',cost:45,green:0,happiness:4,pollution:1},
-    apartment:{name:'Apartment',cost:80,green:0,happiness:3,pollution:2},
-    factory:{name:'Factory',cost:100,green:0,happiness:-3,pollution:8},
-    bench:{name:'Park Bench',cost:15,green:0,happiness:4,pollution:0},
-    solar:{name:'Solar Panel',cost:25,green:2,happiness:1,pollution:-3},
-    lamp:{name:'Street Lamp',cost:18,green:0,happiness:2,pollution:0}
+    oak:{name:'Oak Tree',cost:8,green:3,happiness:2,pollution:-1,energy:0,waste:0},
+    pine:{name:'Pine Tree',cost:10,green:4,happiness:2,pollution:-1,energy:0,waste:0},
+    blossom:{name:'Blossom Tree',cost:12,green:5,happiness:3,pollution:-1,energy:0,waste:0},
+    flower:{name:'Flower Garden',cost:5,green:1,happiness:2,pollution:0,energy:0,waste:0},
+    house:{name:'House',cost:45,green:0,happiness:4,pollution:1,energy:-1,waste:1},
+    apartment:{name:'Apartment',cost:80,green:0,happiness:3,pollution:2,energy:-2,waste:2},
+    factory:{name:'Factory',cost:100,green:0,happiness:-3,pollution:8,energy:-5,waste:4},
+    bench:{name:'Park Bench',cost:15,green:0,happiness:4,pollution:0,energy:0,waste:0},
+    solar:{name:'Solar Panel',cost:25,green:2,happiness:1,pollution:-3,energy:8,waste:0},
+    lamp:{name:'Street Lamp',cost:18,green:0,happiness:2,pollution:0,energy:-1,waste:0}
 };
 
 // ============================================================
@@ -167,7 +167,7 @@ button{font-family:inherit}
 
 .stats-strip{
  display:grid;
- grid-template-columns:repeat(10,minmax(68px,1fr));
+ grid-template-columns:repeat(11,minmax(62px,1fr));
  gap:5px;
  flex:1;
 }
@@ -313,7 +313,7 @@ button{font-family:inherit}
 .footer-info{font-size:9px;color:#b5cdb1}
 
 @media(max-width:1000px){
- .stats-strip{flex-basis:100%;grid-template-columns:repeat(5,minmax(0,1fr))}
+ .stats-strip{flex-basis:100%;grid-template-columns:repeat(6,minmax(0,1fr))}
 }
 
 @media(max-width:550px){
@@ -350,6 +350,7 @@ app.innerHTML = `
     <div class="stat" id="risk-card"><span>🌊 Flood Risk</span><strong id="flood-risk">0%</strong></div>
     <div class="stat"><span>🚰 Drainage</span><strong id="drainage">55%</strong></div>
     <div class="stat"><span>⚡ Energy</span><strong id="energy">45%</strong></div>
+    <div class="stat"><span>♻️ Waste</span><strong id="waste">30%</strong></div>
     <div class="stat"><span>🏭 Industry Pressure</span><strong id="industry-pressure">0%</strong></div>
     <div class="stat"><span>🌊 Runoff Pressure</span><strong id="runoff-pressure">0%</strong></div>
    </div>
@@ -427,7 +428,7 @@ app.innerHTML = `
 [
     'credits','pollution','happiness','green',
     'rainfall','flood-risk','drainage','energy',
-    'industry-pressure','runoff-pressure',
+    'industry-pressure','runoff-pressure','waste',
     'level','status','location-label',
     'selected-tool','risk-card'
 ].forEach(id=>{
@@ -1594,13 +1595,15 @@ function placeObject(tile){
         stats.pollution+data.pollution,0,100
     );
 
-    if(selectedTool==='solar'){
-        stats.energy=THREE.MathUtils.clamp(stats.energy+8,0,100);
-    }
+    // Energy is a balance: solar adds supply, while buildings
+    // and street lighting add demand. Construction also generates waste.
+    stats.energy=THREE.MathUtils.clamp(
+        stats.energy+(data.energy || 0),0,100
+    );
 
-    if(selectedTool==='factory'){
-        stats.energy=THREE.MathUtils.clamp(stats.energy+5,0,100);
-    }
+    stats.waste=THREE.MathUtils.clamp(
+        stats.waste+(data.waste || 0),0,100
+    );
 
     placedItems.push({
         district:tile.district,
@@ -1650,6 +1653,14 @@ function removeObject(item){
 
     stats.pollution=THREE.MathUtils.clamp(
         stats.pollution-data.pollution,0,100
+    );
+
+    stats.energy=THREE.MathUtils.clamp(
+        stats.energy-(data.energy || 0),0,100
+    );
+
+    stats.waste=THREE.MathUtils.clamp(
+        stats.waste-(data.waste || 0),0,100
     );
 
     updateEnvironment();
@@ -2044,6 +2055,7 @@ function renderHUD(){
         'flood-risk':stats.floodRisk+'%',
         drainage:stats.drainage+'%',
         energy:stats.energy+'%',
+        waste:stats.waste+'%',
         'industry-pressure':(stats.industryPressure || 0)+'%',
         'runoff-pressure':(stats.runoffPressure || 0)+'%'
     };
@@ -2200,10 +2212,12 @@ function cleanCity(){
 function updateEconomy(){
 
     const score=(
-        stats.green+
+        (stats.effectiveGreen ?? stats.green)+
         stats.happiness+
-        (100-stats.pollution)
-    )/3;
+        (100-(stats.effectivePollution ?? stats.pollution))+
+        stats.energy+
+        (100-stats.waste)
+    )/5;
 
     if(score>=60) stats.credits+=2;
 
