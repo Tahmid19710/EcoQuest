@@ -1,11 +1,16 @@
 from pathlib import Path
 import json
+import math
+import os
 
 import pandas as pd
 
 from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from dotenv import load_dotenv
 
 from app.model_service import (
     ModelUnavailableError,
@@ -23,6 +28,7 @@ from app.model_service import (
 # =====================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 DATA_DIR = BASE_DIR / "data"
 
 CSV_PATH = DATA_DIR / "tables" / "EcoQuest_Upazila_Susceptibility.csv"
@@ -106,16 +112,47 @@ app = FastAPI(
 )
 
 
-# Development CORS configuration.
-# Restrict origins before public deployment.
+# Development defaults allow the local Vite frontend only.
+# Set ECOQUEST_CORS_ORIGINS to a comma-separated list of trusted
+# frontend origins before deploying the API publicly.
+
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "ECOQUEST_CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",")
+    if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"]
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"]
 )
+
+
+def json_safe(value):
+    """Convert non-JSON values in validation errors to safe strings."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(request, exc):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": json_safe(exc.errors())}
+    )
 
 
 # =====================================================

@@ -74,6 +74,18 @@ function getRecommendations(result) {
         );
     }
 
+    if (result.energy < 50) {
+        recommendations.push(
+            'Improve the city energy balance with solar panels and more efficient infrastructure.'
+        );
+    }
+
+    if (result.waste >= 50) {
+        recommendations.push(
+            'Prioritize waste reduction and use the city cleanup action before expanding further.'
+        );
+    }
+
     if (result.susceptibilityIndex !== null && result.susceptibilityIndex >= 0.7) {
         recommendations.push(
             'This selected Upazila has high historical susceptibility. Prioritize drainage and green infrastructure.'
@@ -501,7 +513,9 @@ export function createEnvironmentAssistant({ getStats }) {
                  Industry pressure: ${result.industryPressure}%<br>
                  Built surface: ${result.imperviousSurface}%<br>
                  Green infiltration: ${result.greenInfiltration}%<br>
-                 Surface runoff pressure: ${result.runoffPressure}%
+                 Surface runoff pressure: ${result.runoffPressure}%<br>
+                 Energy balance: ${result.energy}%<br>
+                 Waste level: ${result.waste}%
              </div>
 
              <div class="eco-ai-section">

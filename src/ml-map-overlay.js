@@ -7,7 +7,9 @@ import {
     getFloodGeoJSON,
     getThresholds,
     getModelInfo,
-    getFeatureImportance
+    getFeatureImportance,
+    predictModel,
+    explainModel
 } from "./ml-risk.js";
 
 const COLORS = {
@@ -439,6 +441,201 @@ function showDetails(properties) {
     renderModelInsights();
 }
 
+const MODEL_FEATURES = [
+    "elev",
+    "hand",
+    "slope",
+    "curv",
+    "twi",
+    "sti",
+    "dist",
+    "dd",
+    "rain",
+    "lulc",
+    "soil"
+];
+
+function appendPredictionLab(section) {
+    const lab = document.createElement("div");
+    lab.style.cssText = "margin-top:18px;padding-top:14px;border-top:1px solid #52715b;";
+
+    const heading = document.createElement("h4");
+    heading.textContent = "AI Prediction Lab";
+    heading.style.cssText = "margin:0 0 6px;color:#a9e4af;font-size:13px;";
+    lab.appendChild(heading);
+
+    const description = document.createElement("p");
+    description.textContent =
+        "Enter all 11 model features using the same units and class coding as the training dataset. The result estimates the model's historical 2022 target; it is not a live flood forecast.";
+    description.style.cssText = "margin:0 0 10px;color:#b6d1c0;font-size:10px;line-height:1.5;";
+    lab.appendChild(description);
+
+    if (!modelInfo?.loaded) {
+        const unavailable = document.createElement("p");
+        unavailable.textContent =
+            "Prediction is unavailable because the saved XGBoost model is not loaded by the backend.";
+        unavailable.style.cssText = "color:#ffc66d;font-size:11px;";
+        lab.appendChild(unavailable);
+        section.appendChild(lab);
+        return;
+    }
+
+    const form = document.createElement("form");
+    form.noValidate = true;
+    form.style.cssText = "display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;";
+
+    MODEL_FEATURES.forEach(feature => {
+        const field = document.createElement("label");
+        field.style.cssText = "display:grid;gap:4px;color:#d9e8dc;font-size:10px;";
+
+        const label = document.createElement("span");
+        label.textContent = feature;
+
+        const input = document.createElement("input");
+        input.type = "number";
+        input.step = "any";
+        input.name = feature;
+        input.required = true;
+        input.autocomplete = "off";
+        input.placeholder = "Required";
+        input.style.cssText = "width:100%;min-width:0;padding:8px;border:1px solid #52715b;border-radius:6px;background:#0f241a;color:#f2f7f1;font:12px Arial,sans-serif;";
+
+        field.append(label, input);
+        form.appendChild(field);
+    });
+
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.textContent = "Run XGBoost Prediction + SHAP";
+    submit.style.cssText = "grid-column:1/-1;margin-top:4px;padding:10px;border:0;border-radius:7px;background:#2f8051;color:white;font-weight:700;cursor:pointer;";
+    form.appendChild(submit);
+
+    const status = document.createElement("p");
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    status.style.cssText = "margin:10px 0 0;color:#b6d1c0;font-size:10px;line-height:1.5;";
+
+    const output = document.createElement("div");
+    output.style.cssText = "margin-top:10px;";
+
+    form.addEventListener("submit", async event => {
+        event.preventDefault();
+
+        const values = {};
+        for (const feature of MODEL_FEATURES) {
+            const input = form.elements.namedItem(feature);
+            const raw = input?.value?.trim();
+
+            if (raw === "" || !Number.isFinite(Number(raw))) {
+                status.textContent = `Enter a valid numeric value for "${feature}".`;
+                input?.focus();
+                return;
+            }
+
+            values[feature] = Number(raw);
+        }
+
+        submit.disabled = true;
+        submit.style.opacity = "0.65";
+        status.textContent = "Running the trained XGBoost model...";
+        output.replaceChildren();
+
+        try {
+            const prediction = await predictModel(values);
+
+            const card = document.createElement("div");
+            card.style.cssText = "padding:11px;border:1px solid #52715b;border-radius:8px;background:#173829;";
+
+            const probability = document.createElement("div");
+            probability.textContent =
+                (Number(prediction.positive_class_probability) * 100).toFixed(2) + "%";
+            probability.style.cssText = "font-size:25px;font-weight:800;color:#a9e4af;";
+
+            const label = document.createElement("strong");
+            label.textContent = prediction.predicted_label || "Prediction returned";
+
+            const target = document.createElement("p");
+            target.textContent =
+                "Target: " + (prediction.target_definition || "Historical 2022 flood fraction ≥ 0.50");
+            target.style.cssText = "margin:6px 0 0;color:#d0e0d3;font-size:10px;line-height:1.5;";
+
+            const interpretation = document.createElement("p");
+            interpretation.textContent = prediction.interpretation || "";
+            interpretation.style.cssText = "margin:6px 0 0;color:#b6d1c0;font-size:10px;line-height:1.5;";
+
+            card.append(probability, label, target, interpretation);
+            output.appendChild(card);
+
+            status.textContent = "Prediction completed. Requesting local SHAP explanation...";
+
+            try {
+                const explanation = await explainModel(values);
+                const explanationHeading = document.createElement("h5");
+                explanationHeading.textContent = "Feature contributions (SHAP)";
+                explanationHeading.style.cssText = "margin:12px 0 5px;color:#a9e4af;font-size:11px;";
+                output.appendChild(explanationHeading);
+
+                const scaleNote = document.createElement("p");
+                scaleNote.textContent =
+                    "Signed contributions are on the raw model margin (log-odds) scale, not percentage points or causal effects.";
+                scaleNote.style.cssText = "margin:0 0 8px;color:#b6d1c0;font-size:9px;line-height:1.45;";
+                output.appendChild(scaleNote);
+
+                const contributions = Array.isArray(explanation.contributions)
+                    ? explanation.contributions
+                    : [];
+                const maxMagnitude = Math.max(
+                    0.000001,
+                    ...contributions.map(item => Math.abs(Number(item.shap_value) || 0))
+                );
+
+                contributions.forEach(item => {
+                    const value = Number(item.shap_value) || 0;
+                    const row = document.createElement("div");
+                    row.style.cssText = "margin:0 0 8px;";
+
+                    const line = document.createElement("div");
+                    line.style.cssText = "display:flex;justify-content:space-between;gap:8px;font-size:10px;margin-bottom:3px;";
+
+                    const name = document.createElement("span");
+                    name.textContent = item.feature;
+
+                    const score = document.createElement("strong");
+                    score.textContent = (value >= 0 ? "+" : "") + value.toFixed(5);
+                    score.style.color = value >= 0 ? "#a9e4af" : "#ffc66d";
+
+                    line.append(name, score);
+
+                    const track = document.createElement("div");
+                    track.style.cssText = "height:5px;border-radius:5px;background:#405448;overflow:hidden;";
+
+                    const fill = document.createElement("div");
+                    const width = Math.abs(value) / maxMagnitude * 100;
+                    fill.style.cssText =
+                        `height:100%;width:${width}%;background:${value >= 0 ? "#78c88b" : "#e4a35c"};border-radius:5px;`;
+
+                    track.appendChild(fill);
+                    row.append(line, track);
+                    output.appendChild(row);
+                });
+
+                status.textContent = "XGBoost prediction and SHAP explanation completed.";
+            } catch (error) {
+                status.textContent =
+                    "Prediction succeeded, but SHAP explanation is unavailable: " + error.message;
+            }
+        } catch (error) {
+            status.textContent = "Prediction failed: " + error.message;
+        } finally {
+            submit.disabled = false;
+            submit.style.opacity = "1";
+        }
+    });
+
+    lab.append(form, status, output);
+    section.appendChild(lab);
+}
+
 function renderModelInsights() {
     const panel = $("ml-details");
     if (!panel || (!modelInfo && !modelImportance)) return;
@@ -527,6 +724,8 @@ function renderModelInsights() {
             section.appendChild(row);
         });
     }
+
+    appendPredictionLab(section);
 
     const note = document.createElement("p");
     note.textContent = "Importance is global XGBoost gain, not an area-specific SHAP explanation or a causal effect. The susceptibility map shows historical model-derived data, not a real-time flood forecast.";

@@ -171,6 +171,8 @@ export function calculateEnvironmentalConsequences({
         effectiveGreen,
         rainfall,
         drainage,
+        energy: readPercent(stats, 'energy'),
+        waste: readPercent(stats, 'waste'),
         rainfallEffect,
         greenEffect,
         drainageEffect,

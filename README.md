@@ -1,5 +1,7 @@
 # EcoQuest
 
+Proposal implementation checklist: [Proposal Traceability](docs/PROPOSAL_TRACEABILITY.md).
+
 EcoQuest is a Three.js city-building environmental simulation with a FastAPI flood-intelligence backend for Sylhet Division, Bangladesh.
 
 ## Current ML and game-simulation scope
@@ -136,3 +138,59 @@ These are the previously recorded cross-validation results, not a new evaluation
 - XGBoost gain importance is provided as a global model diagnostic. It is not SHAP and does not establish causal influence.
 - Local SHAP explanation is available for a supplied 11-feature vector when the SHAP dependency is installed. It does not provide a map-wide SHAP raster.
 - The map represents susceptibility, not current water levels or real-time flood alerts.
+
+
+## Proposal completion: interactive AI and resource loop
+
+The frontend now includes an **AI Prediction Lab** inside the Flood Intelligence map:
+
+1. Open the Flood Intelligence map from the game.
+2. Scroll to **AI Prediction Lab** in the model panel.
+3. Enter all 11 feature values using the same units and class coding as the model's training data.
+4. Submit to the FastAPI `/api/model/predict` endpoint.
+5. The interface displays the probability for the model's historical binary target and requests a local explanation from `/api/model/explain`.
+6. SHAP contributions are displayed on the raw model-margin (log-odds) scale.
+
+The form intentionally has no fabricated default feature values. The selected Upazila's summary statistics are not enough to reconstruct the model's complete 11-feature vector, so the interface does not pretend to infer those inputs automatically.
+
+**Important distinction:** the live game Flood Risk indicator is an explainable rule-based simulation of rainfall, effective greenery, drainage and built-surface runoff. The XGBoost Prediction Lab is a separate feature-based model that estimates its historical target: 2022 flood fraction >= 0.50. Neither output is a real-time flood warning.
+
+## Energy, waste and city economy
+
+Construction now has reversible resource effects:
+
+- Solar panels increase the energy balance and reduce pollution.
+- Houses, apartments, factories and street lamps consume energy.
+- Buildings generate waste according to their gameplay impact.
+- Removing a structure reverses its construction effects and returns the existing partial credit refund.
+- The HUD displays Waste alongside Energy.
+- The in-game sustainability score considers effective green coverage, happiness, effective pollution, energy and waste.
+
+These are transparent gameplay rules for learning and balancing decisions, not measured real-world environmental coefficients.
+
+## Local configuration
+
+Copy the root `.env.example` to `.env` and set the API address:
+
+```env
+VITE_API_BASE_URL=http://127.0.0.1:8000
+```
+
+For the backend, copy `ml_backend/.env.example` to `ml_backend/.env`. Set `ECOQUEST_CORS_ORIGINS` to the exact local frontend origins or the deployed frontend origin, separated by commas. Public deployments must not use wildcard CORS.
+
+## Deployment preparation
+
+Deployment configuration is included:
+
+- `vercel.json` builds the Vite frontend into `dist`.
+- `render.yaml` describes the FastAPI web service, its health-check route and startup command.
+
+To deploy, create the frontend project on Vercel and the API service on Render from this repository. Set `VITE_API_BASE_URL` in Vercel to the deployed API base URL. Set `ECOQUEST_CORS_ORIGINS` in Render to the deployed Vercel origin. The deployment files prepare the project but do not create hosting accounts, secrets, or a public URL.
+
+## Persistence scope
+
+The MVP saves the city and mission progress in browser `localStorage`. Supabase/PostgreSQL accounts and a public leaderboard remain follow-on features in the proposal; they are not represented as implemented in this MVP.
+
+## Architecture decisions
+
+The proposal's original diagram lists Phaser 3.90. The current implementation uses **Three.js** for the full 3D city experience, following the later project decision to retain the Three.js city builder. The frontend remains Vite + JavaScript, and the AI service remains Python + FastAPI. The proposal mentions Random Forest or Gradient Boosting as candidate baselines; the current repository contains a trained XGBoost classifier and documents its historical target and spatial validation separately.
