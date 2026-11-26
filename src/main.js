@@ -57,15 +57,54 @@ const stats = {
     level: 1
 };
 
-const districts = [
-    {id:'forest',name:'Green Forest',icon:'🌲',x:-850,z:-650,type:'forest'},
-    {id:'downtown',name:'Downtown',icon:'🏙️',x:0,z:-650,type:'downtown'},
-    {id:'riverside',name:'Riverside',icon:'🌊',x:850,z:-650,type:'riverside'},
-    {id:'central',name:'Central Park',icon:'🌳',x:-850,z:0,type:'park'},
-    {id:'residential',name:'Residential',icon:'🏡',x:0,z:0,type:'residential'},
-    {id:'industrial',name:'Industrial Zone',icon:'🏭',x:850,z:0,type:'industrial'},
-    {id:'farm',name:'Farm & Lake',icon:'🌾',x:0,z:650,type:'farm'}
+const ZONE_COLUMNS=10, ZONE_ROWS=7, ZONE_SPACING=800;
+const ZONE_ORIGIN_X=-850, ZONE_ORIGIN_Z=-650;
+
+const DISTRICT_TYPES=[
+    {id:'forest',name:'Green Forest',icon:'🌲',type:'forest'},
+    {id:'downtown',name:'Downtown',icon:'🏙️',type:'downtown'},
+    {id:'riverside',name:'Riverside',icon:'🌊',type:'riverside'},
+    {id:'central',name:'Central Park',icon:'🌳',type:'park'},
+    {id:'residential',name:'Residential',icon:'🏡',type:'residential'},
+    {id:'industrial',name:'Industrial Zone',icon:'🏭',type:'industrial'},
+    {id:'farm',name:'Farm & Lake',icon:'🌾',type:'farm'}
 ];
+
+const ORIGINAL_ZONE_TYPES={
+    '0:0':'forest','0:1':'downtown','0:2':'riverside',
+    '1:0':'central','1:1':'residential','1:2':'industrial','2:1':'farm'
+};
+const typeCounts=Object.fromEntries(DISTRICT_TYPES.map(t=>[t.id,0]));
+let additionalTypeIndex=0;
+const districts=[];
+
+for(let row=0;row<ZONE_ROWS;row++){
+    for(let col=0;col<ZONE_COLUMNS;col++){
+        const zoneNo=row*ZONE_COLUMNS+col+1;
+        const anchored=ORIGINAL_ZONE_TYPES[`${row}:${col}`];
+        const typeId=anchored ||
+            DISTRICT_TYPES[additionalTypeIndex++%DISTRICT_TYPES.length].id;
+        const base=DISTRICT_TYPES.find(t=>t.id===typeId);
+        const ordinal=++typeCounts[typeId];
+        const suffix=String(ordinal).padStart(2,'0');
+
+        districts.push({
+            id:ordinal===1?base.id:`${base.id}-${suffix}`,
+            name:`${base.name} ${suffix}`,
+            icon:base.icon,type:base.type,
+            x:ZONE_ORIGIN_X+col*ZONE_SPACING,
+            z:ZONE_ORIGIN_Z+row*ZONE_SPACING,
+            zoneNo,row,col
+        });
+    }
+}
+
+const zoneOptions=DISTRICT_TYPES.map(type=>{
+    const options=districts.filter(z=>z.type===type.type).map(z=>
+        `<option value="${z.id}">Zone ${String(z.zoneNo).padStart(2,'0')} — ${z.icon} ${z.name}</option>`
+    ).join('');
+    return `<optgroup label="${type.name}">${options}</optgroup>`;
+}).join('');
 
 const tools = {
     oak:{name:'Oak Tree',cost:8,green:3,happiness:2,pollution:-1,energy:0,waste:0},
@@ -96,6 +135,7 @@ let currentDistrict = 'central';
 
 let placedItems = [];
 let buildTiles = [];
+const designBonusClaimed=new Set();
 let vehicles = [];
 let rainSystem;
 let rainArray;
@@ -277,11 +317,27 @@ button{font-family:inherit}
 
 .stage-location{top:12px;left:12px}
 .movement-hint{bottom:12px;left:12px;color:#d7e8d3}
-.game-alert{top:12px;right:12px;color:#9df3a4}
+.game-alert{top:70px;right:12px;color:#9df3a4}
+
+.zone-selector{
+ position:absolute;top:12px;right:12px;z-index:8;
+ display:grid;gap:5px;width:min(265px,calc(100% - 24px));
+ padding:9px;border:1px solid #b4d3a9;border-radius:9px;
+ background:rgba(15,36,24,.94);box-shadow:0 8px 24px #0006;
+ backdrop-filter:blur(8px);
+}
+.zone-selector label{color:#b8efb0;font-size:9px;font-weight:900;letter-spacing:1px}
+.zone-selector select{
+ width:100%;min-width:0;padding:9px 10px;border:1px solid #668b68;
+ border-radius:6px;outline:none;background:#243f2d;color:#f2f8ef;
+ font:700 11px Arial,sans-serif;cursor:pointer;
+}
+.zone-selector select:focus{border-color:#b8efb0;box-shadow:0 0 0 2px #9df3a433}
+.zone-selector option,.zone-selector optgroup{background:#203a29;color:#f2f8ef}
 
 .camera-controls{
  position:absolute;
- top:54px;
+ top:108px;
  right:12px;
  z-index:6;
  display:flex;
@@ -322,6 +378,10 @@ button{font-family:inherit}
  .eco-shell{padding:2px}
  .brand{width:100%}
  .game-stage{height:65vh;min-height:430px}
+ .zone-selector{width:min(220px,calc(100% - 24px))}
+ .zone-selector select{font-size:10px;padding:8px}
+ .game-alert{top:66px;font-size:9px}
+ .camera-controls{top:102px}
 }
 `;
 
@@ -359,11 +419,9 @@ app.innerHTML = `
 
   <nav class="navigation">
    <span class="bar-label">EXPLORE</span>
-   ${districts.map(d=>`
-    <button class="nav-btn ${d.id==='central'?'active':''}" data-district="${d.id}">
-     ${d.icon} ${d.name}
-    </button>
-   `).join('')}
+   <span style="font-size:10px;color:#d2e7ce;font-weight:800">
+    70 CONNECTED ZONES · SELECT ANY ZONE FROM THE TOP-RIGHT MENU
+   </span>
   </nav>
 
   <nav class="toolbar">
@@ -399,7 +457,11 @@ app.innerHTML = `
   </nav>
 
   <section class="game-stage">
-   <div class="stage-location" id="location-label">🌳 Central Park</div>
+   <div class="stage-location" id="location-label">ZONE 04 · 🌳 Central Park 01</div>
+   <div class="zone-selector">
+    <label for="zone-select">🗺️ SELECT A ZONE · 70 AVAILABLE</label>
+    <select id="zone-select">${zoneOptions}</select>
+   </div>
    <div class="game-alert">● LIVE 3D SIMULATION</div>
 
    <div class="camera-controls">
@@ -418,7 +480,7 @@ app.innerHTML = `
   <footer class="game-footer">
    <div id="status">Loading EcoQuest...</div>
    <div class="footer-info">
-    LEVEL <strong id="level">01</strong> · 7 CONNECTED DISTRICTS
+    LEVEL <strong id="level">01</strong> · 70 CONNECTED ZONES · 🌳 TREE +12 · 🚰 DRAINAGE +25 · 🏆 DESIGN +100
    </div>
   </footer>
 
@@ -1075,22 +1137,24 @@ function createCrosswalk(x, z, vertical = false) {
 
 function buildRoadNetwork(){
 
-    [-325,325].forEach(z=>{
-        createRoad(0,z,3000,CONFIG.roadWidth);
-    });
+    for(let col=0;col<ZONE_COLUMNS-1;col++){
+        const x=ZONE_ORIGIN_X+(col+0.5)*ZONE_SPACING;
+        const centerZ=ZONE_ORIGIN_Z+((ZONE_ROWS-1)*ZONE_SPACING)/2;
+        createRoad(x,centerZ,ZONE_ROWS*ZONE_SPACING-100,CONFIG.roadWidth,true);
+    }
 
-    [-425,425].forEach(x=>{
-        createRoad(x,0,2600,CONFIG.roadWidth,true);
-    });
+    for(let row=0;row<ZONE_ROWS-1;row++){
+        const z=ZONE_ORIGIN_Z+(row+0.5)*ZONE_SPACING;
+        const centerX=ZONE_ORIGIN_X+((ZONE_COLUMNS-1)*ZONE_SPACING)/2;
+        createRoad(centerX,z,ZONE_COLUMNS*ZONE_SPACING-100,CONFIG.roadWidth);
+    }
 
-    districts.forEach(d=>{
-        createRoad(d.x,d.z+235,650,22);
-    });
+    districts.forEach(d=>createRoad(d.x,d.z+235,650,22));
 
-    createCrosswalk(-425,-325,true);
-    createCrosswalk(425,325,true);
-    createCrosswalk(0,-325,false);
-    createCrosswalk(0,325,false);
+    createCrosswalk(-450,-250,true);
+    createCrosswalk(350,550,true);
+    createCrosswalk(1150,1350,false);
+    createCrosswalk(2750,2150,false);
 }
 
 // ============================================================
@@ -1138,12 +1202,10 @@ function createCar(x,z,color=0x347d9a){
 function createTraffic(){
 
     const paths=[
-        {x:-1450,z:-325,end:1450,speed:20,color:0x377d9c},
-        {x:1450,z:325,end:-1450,speed:-16,color:0xc18b4c},
-        {x:-1450,z:325,end:1450,speed:13,color:0x6e8b62},
-        {x:1450,z:-325,end:-1450,speed:-18,color:0x9a5550},
-        {x:-425,z:-1250,end:1250,speed:14,color:0x8d9292},
-        {x:425,z:1250,end:-1250,speed:-12,color:0x9c9b77}
+        {x:-1250,z:-250,start:-1250,end:6750,speed:20,color:0x377d9c},
+        {x:6750,z:550,start:6750,end:-1250,speed:-16,color:0xc18b4c},
+        {x:-450,z:-950,start:-950,end:4550,speed:14,color:0x8d9292},
+        {x:350,z:4550,start:4550,end:-950,speed:-12,color:0x9c9b77}
     ];
 
     paths.forEach((p,i)=>{
@@ -1166,15 +1228,15 @@ function updateTraffic(delta){
 
             mesh.position.z+=path.speed*delta;
 
-            if(path.speed>0&&mesh.position.z>path.end) mesh.position.z=-1300;
-            if(path.speed<0&&mesh.position.z<path.end) mesh.position.z=1300;
+            if(path.speed>0&&mesh.position.z>path.end) mesh.position.z=path.start;
+            if(path.speed<0&&mesh.position.z<path.end) mesh.position.z=path.start;
 
         }else{
 
             mesh.position.x+=path.speed*delta;
 
-            if(path.speed>0&&mesh.position.x>path.end) mesh.position.x=-1500;
-            if(path.speed<0&&mesh.position.x<path.end) mesh.position.x=1500;
+            if(path.speed>0&&mesh.position.x>path.end) mesh.position.x=path.start;
+            if(path.speed<0&&mesh.position.x<path.end) mesh.position.x=path.start;
         }
     });
 }
@@ -1546,6 +1608,26 @@ function findOccupiedTile(tile){
     );
 }
 
+function getZoneDesignScore(zoneId){
+    const items=placedItems.filter(item=>item.district===zoneId);
+    if(!items.length) return 0;
+
+    const greenery=items.filter(item=>
+        ['oak','pine','blossom','flower'].includes(item.type)
+    ).length;
+    const amenities=items.filter(item=>
+        ['bench','lamp','solar'].includes(item.type)
+    ).length;
+    const variety=new Set(items.map(item=>item.type)).size;
+
+    return Math.round(
+        Math.min(35,greenery*7)+
+        Math.min(25,variety*8)+
+        Math.min(20,amenities*10)+
+        Math.min(20,items.length*2.5)
+    );
+}
+
 function placeObject(tile){
 
     const existing=findOccupiedTile(tile);
@@ -1606,11 +1688,30 @@ function placeObject(tile){
         object
     });
 
+    const plantingRewards={oak:12,pine:14,blossom:16,flower:7};
+    const plantingReward=plantingRewards[selectedTool] || 0;
+    stats.credits+=plantingReward;
+
+    const designScore=getZoneDesignScore(tile.district);
+    let designBonus=0;
+    if(designScore>=80 && !designBonusClaimed.has(tile.district)){
+        designBonus=100;
+        designBonusClaimed.add(tile.district);
+        stats.credits+=designBonus;
+    }
+
     updateEnvironment();
 
     const district=districts.find(d=>d.id===tile.district);
+    const rewards=[];
+    if(plantingReward) rewards.push(`+${plantingReward} planting credits`);
+    if(designBonus) rewards.push(`🏆 +${designBonus} beautiful-zone design bonus`);
+    const rewardText=rewards.length?` ${rewards.join(' · ')}.`:'';
 
-    message(`${data.name} constructed in ${district.name}!`);
+    message(
+        `${data.name} built in Zone ${district.zoneNo} — ${district.name}. `+
+        `Design score: ${designScore}/100.${rewardText}`
+    );
 }
 
 function disposeObject(object){
@@ -1696,7 +1797,7 @@ function setupCamera(){
     controls.enableZoom=true;
 
     controls.minDistance=75;
-    controls.maxDistance=950;
+    controls.maxDistance=1800;
     controls.minPolarAngle=0.15;
     controls.maxPolarAngle=Math.PI/2.05;
 
@@ -1724,13 +1825,13 @@ function goToDistrict(id){
 
     controls.update();
 
-    hud['location-label'].textContent=d.icon+' '+d.name;
+    hud['location-label'].textContent =
+        `ZONE ${String(d.zoneNo).padStart(2,'0')} · ${d.icon} ${d.name}`;
 
-    document.querySelectorAll('[data-district]').forEach(btn=>{
-        btn.classList.toggle('active',btn.dataset.district===id);
-    });
+    const zoneSelect=document.getElementById('zone-select');
+    if(zoneSelect) zoneSelect.value=id;
 
-    message('Welcome to '+d.name+'!');
+    message(`Welcome to Zone ${d.zoneNo}: ${d.name}!`);
 }
 
 // ============================================================
@@ -2160,8 +2261,11 @@ function improveDrainage(){
     stats.credits-=20;
     stats.drainage=Math.min(100,stats.drainage+15);
 
+    const drainageReward=25;
+    stats.credits+=drainageReward;
+
     updateEnvironment();
-    message('Drainage system upgraded!');
+    message(`Drainage system upgraded! +${drainageReward} bonus credits.`);
 }
 
 function cleanCity(){
@@ -2203,6 +2307,7 @@ function saveGame(){
 
         const data={
             stats,
+            designBonusClaimed:[...designBonusClaimed],
             placedItems:placedItems.map(item=>({
                 district:item.district,
                 row:item.row,
@@ -2249,6 +2354,9 @@ function loadGame(){
         placedItems=[];
 
         Object.assign(stats,data.stats);
+
+        designBonusClaimed.clear();
+        (data.designBonusClaimed||[]).forEach(id=>designBonusClaimed.add(id));
 
         (data.placedItems||[]).forEach(saved=>{
 
@@ -2299,6 +2407,7 @@ function resetGame(){
     });
 
     placedItems=[];
+    designBonusClaimed.clear();
 
     Object.assign(stats,{
         credits:500,
@@ -2427,12 +2536,10 @@ function setupInterfaceEvents(){
         );
     });
 
-    document.querySelectorAll('[data-district]').forEach(btn=>{
-
-        btn.addEventListener('click',()=>{
-            goToDistrict(btn.dataset.district);
-        });
-    });
+    const zoneSelect=document.getElementById('zone-select');
+    if(zoneSelect){
+        zoneSelect.addEventListener('change',()=>goToDistrict(zoneSelect.value));
+    }
 
     document.querySelectorAll('[data-tool]').forEach(btn=>{
 
@@ -2601,13 +2708,13 @@ async function initializeGame(){
         scene=new THREE.Scene();
 
         scene.background=new THREE.Color(0x9db8c0);
-        scene.fog=new THREE.Fog(0x9db8c0,1400,3500);
+        scene.fog=new THREE.Fog(0x9db8c0,2200,10500);
 
         camera=new THREE.PerspectiveCamera(
             48,
             container.clientWidth/container.clientHeight,
             0.1,
-            5000
+            15000
         );
 
         renderer=new THREE.WebGLRenderer({
@@ -2657,10 +2764,14 @@ async function initializeGame(){
             modelLibrary.getReport()
         );
 
-        // World ground.
+        // Continuous ground covering the complete 10 x 7 zone world.
+        const worldCenterX=ZONE_ORIGIN_X+((ZONE_COLUMNS-1)*ZONE_SPACING)/2;
+        const worldCenterZ=ZONE_ORIGIN_Z+((ZONE_ROWS-1)*ZONE_SPACING)/2;
+
         addPlane(
-            0,-0.3,0,
-            3500,3200,
+            worldCenterX,-0.3,worldCenterZ,
+            ZONE_COLUMNS*ZONE_SPACING+500,
+            ZONE_ROWS*ZONE_SPACING+500,
             materials.grass
         );
 
