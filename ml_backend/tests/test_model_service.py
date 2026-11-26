@@ -1,5 +1,7 @@
 import unittest
 
+import numpy as np
+
 from app import model_service
 
 
@@ -16,7 +18,7 @@ class FakeModel:
 
     def predict_proba(self, frame):
         self.last_frame = frame.copy()
-        return [[0.18, 0.82]]
+        return np.asarray([[0.18, 0.82]])
 
     def get_booster(self):
         return FakeBooster()
