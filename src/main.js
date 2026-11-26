@@ -2686,12 +2686,23 @@ function loadGame(){
 
         Object.assign(stats,data.stats);
 
+        // Re-map saved builds to the new zone plan using their world coordinates.
+        // This keeps older saves in the same physical part of the city.
         designBonusClaimed.clear();
-        (data.designBonusClaimed||[]).forEach(id=>designBonusClaimed.add(id));
 
         (data.placedItems||[]).forEach(saved=>{
 
             if(!tools[saved.type]) return;
+
+            const nearestDistrict=districts.reduce((closest,district)=>{
+                const distance=
+                    (district.x-saved.x)**2+
+                    (district.z-saved.z)**2;
+
+                return !closest||distance<closest.distance
+                    ?{id:district.id,distance}
+                    :closest;
+            },null);
 
             const object=createBuildObject(
                 saved.type,saved.x,saved.z
@@ -2701,8 +2712,20 @@ function loadGame(){
 
             placedItems.push({
                 ...saved,
+                district:nearestDistrict?.id||saved.district,
                 object
             });
+        });
+
+        // Existing high-score zones have already earned their one-time bonus.
+        const restoredZoneIds=new Set(
+            placedItems.map(item=>item.district)
+        );
+
+        restoredZoneIds.forEach(id=>{
+            if(getZoneDesignScore(id)>=80){
+                designBonusClaimed.add(id);
+            }
         });
 
         if (missionSystem) {
