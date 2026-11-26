@@ -1,15 +1,36 @@
-const API_BASE = "http://127.0.0.1:8000";
+const configuredApiBase = import.meta.env?.VITE_API_BASE_URL;
 
-async function request(path) {
-    const response = await fetch(`${API_BASE}${path}`);
+const API_BASE = (
+    configuredApiBase || "http://127.0.0.1:8000"
+).replace(/\/+$/, "");
+
+async function request(path, options = {}) {
+    const response = await fetch(`${API_BASE}${path}`, {
+        ...options,
+        headers: {
+            ...(options.body ? { "Content-Type": "application/json" } : {}),
+            ...options.headers
+        }
+    });
+
+    let payload = null;
+
+    try {
+        payload = await response.json();
+    } catch {
+        payload = null;
+    }
 
     if (!response.ok) {
+        const detail = payload?.detail || payload?.message;
         throw new Error(
-            `EcoQuest API error: ${response.status}`
+            detail
+                ? `EcoQuest API error (${response.status}): ${detail}`
+                : `EcoQuest API error: ${response.status}`
         );
     }
 
-    return response.json();
+    return payload;
 }
 
 export async function getHealth() {
@@ -37,18 +58,25 @@ export async function getFloodGeoJSON() {
 export async function getThresholds() {
     return request("/api/config/thresholds");
 }
-// =====================================================
-// XGBOOST MODEL INFORMATION
-// =====================================================
 
 export async function getModelInfo() {
     return request("/api/model/info");
 }
 
-// =====================================================
-// GLOBAL FEATURE IMPORTANCE
-// =====================================================
-
 export async function getFeatureImportance() {
     return request("/api/model/feature-importance");
+}
+
+export async function predictModel(features) {
+    return request("/api/model/predict", {
+        method: "POST",
+        body: JSON.stringify(features)
+    });
+}
+
+export async function explainModel(features) {
+    return request("/api/model/explain", {
+        method: "POST",
+        body: JSON.stringify(features)
+    });
 }
