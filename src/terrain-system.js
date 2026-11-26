@@ -4,7 +4,7 @@ import * as THREE from 'three';
 // ======================================================
 // ECOQUEST — NATURAL VEGETATION SYSTEM
 // Optimized 3D grass, shrubs and scattered rocks
-// Compatible with existing Seven-District World
+// Compatible with the expanded 70-zone world
 // ======================================================
 
 const DISTRICT_SIZE = 700;
