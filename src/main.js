@@ -6,6 +6,7 @@ import { createNaturalTerrain } from './terrain-system.js';
 import { createLightingSystem } from './lighting-system.js';
 import { createEnvironmentAssistant } from './environment-assistant.js';
 import { createMissionSystem } from './mission-system.js';
+import { calculateEnvironmentalConsequences } from './environmental-consequences.js';
 import {
     makeRoadMaterial,
     makeConcreteMaterial,
@@ -46,6 +47,12 @@ const stats = {
     drainage: 55,
     energy: 45,
     waste: 30,
+    effectivePollution: 38,
+    effectiveGreen: 32,
+    industryPressure: 0,
+    imperviousSurface: 0,
+    greenInfiltration: 0,
+    runoffPressure: 0,
     level: 1
 };
 
@@ -160,7 +167,7 @@ button{font-family:inherit}
 
 .stats-strip{
  display:grid;
- grid-template-columns:repeat(8,minmax(75px,1fr));
+ grid-template-columns:repeat(10,minmax(68px,1fr));
  gap:5px;
  flex:1;
 }
@@ -306,10 +313,11 @@ button{font-family:inherit}
 .footer-info{font-size:9px;color:#b5cdb1}
 
 @media(max-width:1000px){
- .stats-strip{flex-basis:100%;grid-template-columns:repeat(4,1fr)}
+ .stats-strip{flex-basis:100%;grid-template-columns:repeat(5,minmax(0,1fr))}
 }
 
 @media(max-width:550px){
+ .stats-strip{grid-template-columns:repeat(2,minmax(0,1fr))}
  .eco-shell{padding:2px}
  .brand{width:100%}
  .game-stage{height:65vh;min-height:430px}
@@ -342,6 +350,8 @@ app.innerHTML = `
     <div class="stat" id="risk-card"><span>🌊 Flood Risk</span><strong id="flood-risk">0%</strong></div>
     <div class="stat"><span>🚰 Drainage</span><strong id="drainage">55%</strong></div>
     <div class="stat"><span>⚡ Energy</span><strong id="energy">45%</strong></div>
+    <div class="stat"><span>🏭 Industry Pressure</span><strong id="industry-pressure">0%</strong></div>
+    <div class="stat"><span>🌊 Runoff Pressure</span><strong id="runoff-pressure">0%</strong></div>
    </div>
   </header>
 
@@ -417,6 +427,7 @@ app.innerHTML = `
 [
     'credits','pollution','happiness','green',
     'rainfall','flood-risk','drainage','energy',
+    'industry-pressure','runoff-pressure',
     'level','status','location-label',
     'selected-tool','risk-card'
 ].forEach(id=>{
@@ -2026,13 +2037,15 @@ function renderHUD(){
 
     const values={
         credits:stats.credits,
-        pollution:stats.pollution+'%',
+        pollution:(stats.effectivePollution ?? stats.pollution)+'%',
         happiness:stats.happiness+'%',
-        green:stats.green+'%',
+        green:(stats.effectiveGreen ?? stats.green)+'%',
         rainfall:stats.rainfall+'%',
         'flood-risk':stats.floodRisk+'%',
         drainage:stats.drainage+'%',
-        energy:stats.energy+'%'
+        energy:stats.energy+'%',
+        'industry-pressure':(stats.industryPressure || 0)+'%',
+        'runoff-pressure':(stats.runoffPressure || 0)+'%'
     };
 
     Object.entries(values).forEach(([id,value])=>{
@@ -2077,39 +2090,21 @@ function renderHUD(){
 
 function updateEnvironment(){
 
-    // Existing local environmental risk.
-    const localRisk =
-        stats.rainfall * 0.65 +
-        (100 - stats.green) * 0.20 +
-        (100 - stats.drainage) * 0.15;
+    // Derive city-wide consequences from player-built structures
+    // and the current weather / infrastructure indicators.
+    const consequences = calculateEnvironmentalConsequences({
+        stats,
+        placedItems,
+        selectedMLArea
+    });
 
-    let adjustedRisk = localRisk;
-
-    // Apply ML susceptibility only when an Upazila is selected.
-    if (selectedMLArea) {
-
-        const meanScore = THREE.MathUtils.clamp(
-            Number(selectedMLArea.mean_score) || 0,
-            0, 1
-        );
-
-        const highVeryHighShare = THREE.MathUtils.clamp(
-            (Number(selectedMLArea.high_very_high_pct) || 0) / 100,
-            0, 1
-        );
-
-        const susceptibilityIndex =
-            (meanScore + highVeryHighShare) / 2;
-
-        // Game balancing factor: 0.5x to 1.5x.
-        adjustedRisk *= 0.5 + susceptibilityIndex;
-    }
-
-    stats.floodRisk = THREE.MathUtils.clamp(
-        Math.round(adjustedRisk),
-        0,
-        100
-    );
+    stats.industryPressure = consequences.industryPressure;
+    stats.imperviousSurface = consequences.imperviousSurface;
+    stats.greenInfiltration = consequences.greenInfiltration;
+    stats.runoffPressure = consequences.runoffPressure;
+    stats.effectivePollution = consequences.effectivePollution;
+    stats.effectiveGreen = consequences.effectiveGreen;
+    stats.floodRisk = consequences.floodRisk;
 
     updateFlood();
 
@@ -2119,13 +2114,12 @@ function updateEnvironment(){
 
     renderHUD();
 
-    // Synchronize the environmental assistant.
+    // Keep the explainable assistant and missions synchronized
+    // with the same derived environmental indicators.
     if (environmentAssistant) {
         environmentAssistant.update();
     }
 
-    // Update the active environmental challenge after every
-    // state-changing game action.
     if (missionSystem) {
         missionSystem.update();
     }
@@ -2733,6 +2727,7 @@ async function initializeGame(){
         environmentAssistant = createEnvironmentAssistant({
             getStats: () => ({
                 ...stats,
+                placedItems: placedItems.map(item => ({ type: item.type })),
                 selectedMLArea: selectedMLArea
                     ? { ...selectedMLArea }
                     : null
