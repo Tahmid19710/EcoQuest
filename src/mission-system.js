@@ -12,12 +12,19 @@ const readNumber = (stats, key) => {
     return Number.isFinite(value) ? value : 0;
 };
 
+const readPreferredNumber = (stats, preferredKey, fallbackKey) => {
+    const preferred = Number(stats?.[preferredKey]);
+    return Number.isFinite(preferred)
+        ? preferred
+        : readNumber(stats, fallbackKey);
+};
+
 const snapshot = (stats) => ({
-    green: readNumber(stats, 'green'),
+    green: readPreferredNumber(stats, 'effectiveGreen', 'green'),
     happiness: readNumber(stats, 'happiness'),
     rainfall: readNumber(stats, 'rainfall'),
     drainage: readNumber(stats, 'drainage'),
-    pollution: readNumber(stats, 'pollution'),
+    pollution: readPreferredNumber(stats, 'effectivePollution', 'pollution'),
     waste: readNumber(stats, 'waste'),
     floodRisk: readNumber(stats, 'floodRisk')
 });

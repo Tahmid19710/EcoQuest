@@ -4,94 +4,40 @@
 // Rule-based simulation, not a trained ML model
 // ============================================================
 
-const clamp = (value, min, max) =>
-    Math.max(min, Math.min(max, value));
+import {
+    calculateEnvironmentalConsequences
+} from './environmental-consequences.js';
 
 function calculateRisk(stats) {
 
-    const rainfall = clamp(Number(stats.rainfall) || 0, 0, 100);
-    const drainage = clamp(Number(stats.drainage) || 0, 0, 100);
-    const green = clamp(Number(stats.green) || 0, 0, 100);
-
-    const rainfallEffect = rainfall * 0.65;
-    const greenEffect = (100 - green) * 0.20;
-    const drainageEffect = (100 - drainage) * 0.15;
-
-    const localRisk =
-        rainfallEffect + greenEffect + drainageEffect;
-
-    // Match the game's geographic modifier from the selected
-    // historical susceptibility map area. This is not a live
-    // XGBoost prediction for the current game state.
-    const selectedArea = stats.selectedMLArea || null;
-    let susceptibilityIndex = null;
-    let susceptibilityMultiplier = 1;
-
-    if (selectedArea) {
-        const meanScore = clamp(
-            Number(selectedArea.mean_score) || 0,
-            0,
-            1
-        );
-
-        const highShare = clamp(
-            (Number(selectedArea.high_very_high_pct) || 0) / 100,
-            0,
-            1
-        );
-
-        susceptibilityIndex = (meanScore + highShare) / 2;
-        susceptibilityMultiplier = 0.5 + susceptibilityIndex;
-    }
-
-    const risk = clamp(
-        Math.round(localRisk * susceptibilityMultiplier),
-        0,
-        100
-    );
+    const result = calculateEnvironmentalConsequences({
+        stats,
+        placedItems: stats.placedItems || [],
+        selectedMLArea: stats.selectedMLArea || null
+    });
 
     let level = 'Low';
     let color = '#63c98a';
 
-    if (risk >= 70) {
+    if (result.floodRisk >= 70) {
         level = 'Critical';
         color = '#ff7777';
-    } else if (risk >= 40) {
+    } else if (result.floodRisk >= 40) {
         level = 'High';
         color = '#ffc66d';
-    } else if (risk >= 20) {
+    } else if (result.floodRisk >= 20) {
         level = 'Moderate';
         color = '#a7db78';
     }
 
     return {
-        risk,
-        localRisk: clamp(Math.round(localRisk), 0, 100),
+        ...result,
+        risk: result.floodRisk,
         level,
         color,
-        rainfall,
-        drainage,
-        green,
-        selectedArea,
-        susceptibilityIndex,
-        susceptibilityMultiplier,
-        factors: [
-            {
-                name: 'Heavy rainfall',
-                points: rainfallEffect,
-                description: 'Rainfall increases water accumulation.'
-            },
-            {
-                name: 'Low green coverage',
-                points: greenEffect,
-                description: 'Less vegetation reduces natural absorption.'
-            },
-            {
-                name: 'Poor drainage',
-                points: drainageEffect,
-                description: 'Weak drainage makes runoff harder to manage.'
-            }
-        ].sort((a, b) => b.points - a.points)
+        green: result.effectiveGreen,
+        pollution: result.effectivePollution,
+        selectedArea: result.selectedMLArea
     };
 }
 function getRecommendations(result) {
@@ -113,6 +59,18 @@ function getRecommendations(result) {
     if (result.rainfall >= 50) {
         recommendations.push(
             'Prepare for heavy rainfall and monitor flood risk.'
+        );
+    }
+
+    if (result.runoffPressure >= 15) {
+        recommendations.push(
+            'Reduce built-surface runoff by protecting green spaces and adding trees or gardens.'
+        );
+    }
+
+    if (result.industryPressure >= 10 || result.pollution >= 60) {
+        recommendations.push(
+            'Review further factory expansion and consider cleaner infrastructure such as solar panels.'
         );
     }
 
@@ -149,9 +107,13 @@ function escapeHtml(value) {
 function projectAction(stats, action) {
 
     const next = {
+        ...stats,
         rainfall: stats.rainfall,
         drainage: stats.drainage,
         green: stats.green,
+        placedItems: Array.isArray(stats.placedItems)
+            ? stats.placedItems.map(item => ({ ...item }))
+            : [],
         selectedMLArea: stats.selectedMLArea || null
     };
 
@@ -160,8 +122,9 @@ function projectAction(stats, action) {
     }
 
     if (action === 'trees') {
-        // One Oak Tree adds 3 green points in the actual game tools.
+        // One Oak Tree adds 3 Green Score points and infiltration capacity.
         next.green = Math.min(100, next.green + 3);
+        next.placedItems.push({ type: 'oak' });
     }
 
     return calculateRisk(next);
@@ -417,8 +380,8 @@ export function createEnvironmentAssistant({ getStats }) {
          <div class="eco-ai-body">
 
              <p class="eco-ai-description">
-                 Explainable flood-risk simulation based on
-                 rainfall, greenery and drainage.
+                 Explainable city simulation based on rainfall,
+                 greenery, drainage and player-built surfaces.
              </p>
 
              <div id="eco-ai-results"></div>
@@ -468,8 +431,9 @@ export function createEnvironmentAssistant({ getStats }) {
              </div>
 
              <p class="eco-ai-note">
-                 Game risk is a transparent simulation of rainfall, greenery and drainage,
-                 adjusted by the selected Upazila's historical susceptibility layer.
+                 Game risk is a transparent simulation of rainfall, effective greenery,
+                 drainage and built-surface runoff, adjusted by the selected Upazila's
+                 historical susceptibility layer.
                  The XGBoost classifier predicts its historical 2022 target from 11
                  geospatial features; it is not a live flood forecast. Preview buttons
                  do not change the city. Apply buttons use the actual game controls.
@@ -531,8 +495,17 @@ export function createEnvironmentAssistant({ getStats }) {
                  No Upazila selected. The game is using local simulated conditions only.
              </div>
              `}
+             <div class="eco-ai-area-context">
+                 <strong>Live city pressures</strong><br>
+                 Effective pollution: ${result.effectivePollution}%<br>
+                 Industry pressure: ${result.industryPressure}%<br>
+                 Built surface: ${result.imperviousSurface}%<br>
+                 Green infiltration: ${result.greenInfiltration}%<br>
+                 Surface runoff pressure: ${result.runoffPressure}%
+             </div>
+
              <div class="eco-ai-section">
-                 📊 Local simulation drivers
+                 📊 Local flood-risk drivers
              </div>
 
              ${result.factors.map(factor => `
