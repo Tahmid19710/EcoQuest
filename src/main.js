@@ -210,6 +210,7 @@ const tools = {
 
 let scene, camera, renderer, controls, clock;
 let modelLibrary;
+let terrainSystem;
 let lightingSystem;
 let environmentAssistant;
 let missionSystem;
