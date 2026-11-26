@@ -5,6 +5,7 @@ import { ModelLibrary } from './model-loader.js';
 import { createNaturalTerrain } from './terrain-system.js';
 import { createLightingSystem } from './lighting-system.js';
 import { createEnvironmentAssistant } from './environment-assistant.js';
+import { createMissionSystem } from './mission-system.js';
 import {
     makeRoadMaterial,
     makeConcreteMaterial,
@@ -79,6 +80,7 @@ let scene, camera, renderer, controls, clock;
 let modelLibrary;
 let lightingSystem;
 let environmentAssistant;
+let missionSystem;
 
 
 let selectedTool = 'oak';
@@ -2121,6 +2123,12 @@ function updateEnvironment(){
     if (environmentAssistant) {
         environmentAssistant.update();
     }
+
+    // Update the active environmental challenge after every
+    // state-changing game action.
+    if (missionSystem) {
+        missionSystem.update();
+    }
 }
 
 
@@ -2227,6 +2235,7 @@ function saveGame(){
                 type:item.type,
                 cost:item.cost
             })),
+            missions: missionSystem ? missionSystem.getSaveData() : null,
             currentDistrict
         };
 
@@ -2279,6 +2288,10 @@ function loadGame(){
             });
         });
 
+        if (missionSystem) {
+            missionSystem.loadSaveData(data.missions);
+        }
+
         updateEnvironment();
 
         goToDistrict(
@@ -2323,6 +2336,10 @@ function resetGame(){
     });
 
     selectedTool='oak';
+
+    if (missionSystem) {
+        missionSystem.reset();
+    }
 
     updateEnvironment();
     goToDistrict('central');
@@ -2700,6 +2717,17 @@ async function initializeGame(){
 
         // Morning / Noon / Sunset / Night buttons.
         setupLightingControls();
+
+        // Initialize the proposal-aligned environmental mission system.
+        missionSystem = createMissionSystem({
+            stage: document.querySelector('.game-stage'),
+            getStats: () => ({ ...stats }),
+            onReward: (reward) => {
+                stats.credits += reward;
+                renderHUD();
+            },
+            onMessage: (text) => message(text)
+        });
 
         // Initialize explainable environmental assistant.
         environmentAssistant = createEnvironmentAssistant({
