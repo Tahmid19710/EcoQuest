@@ -1,5 +1,6 @@
 import unittest
 
+import numpy as np
 from fastapi.testclient import TestClient
 
 from app import main as api
@@ -8,7 +9,7 @@ from app import model_service
 
 class FakeModel:
     def predict_proba(self, frame):
-        return [[0.2, 0.8]]
+        return np.asarray([[0.2, 0.8]])
 
 
 class ApiIntegrationTests(unittest.TestCase):
