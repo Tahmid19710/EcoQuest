@@ -102,7 +102,7 @@ function createGrassGeometry() {
 
 // ======================================================
 // DISTRICT PLACEMENT RULES
-// Keep roads and central buildable areas clear
+// Keep central buildable areas clear; arterial roads sit between zones
 // ======================================================
 
 function isSafePosition(district, x, z, isWaterPosition) {
@@ -126,42 +126,6 @@ function isSafePosition(district, x, z, isWaterPosition) {
         localZ > -155 && localZ < 145
     ) {
         return false;
-    }
-
-    // Local district road.
-    if (Math.abs(localZ - 235) < 40) {
-        return false;
-    }
-
-    // Riverside water channel.
-    if (
-        district.type === 'riverside' &&
-        Math.abs(localX + 260) < 95 &&
-        Math.abs(localZ) < 245
-    ) {
-        return false;
-    }
-
-    // Central Park lake.
-    if (
-        district.type === 'park' &&
-        Math.hypot(localX + 230, localZ + 150) < 100
-    ) {
-        return false;
-    }
-
-    // Farm lake and fields.
-    if (district.type === 'farm') {
-        if (Math.hypot(localX - 250, localZ + 170) < 95) {
-            return false;
-        }
-
-        if (
-            localX > -100 && localX < 255 &&
-            localZ > -5 && localZ < 190
-        ) {
-            return false;
-        }
     }
 
     // Additional space for buildings.

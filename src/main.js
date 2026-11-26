@@ -233,7 +233,6 @@ let floodTargetLevel = 0;
 let waterSurfaces = [];
 let waterRipples = [];
 let riverCenterline = [];
-let lakeAreas = [];
 let roadSegments = [];
 let roadsideLampSequence = 0;
 
@@ -1417,13 +1416,6 @@ function buildRoadNetwork(){
         createRoad(centerX,z,ZONE_COLUMNS*ZONE_SPACING-100,CONFIG.roadWidth);
     }
 
-    districts.forEach(d=>{
-        const localRoadZ=d.z+235;
-        if(!roadSegmentCrossesRiver('x',localRoadZ,d.x-325,d.x+325,22)){
-            createRoad(d.x,localRoadZ,650,22);
-        }
-    });
-
     createCrosswalk(-450,-250,true);
     createCrosswalk(350,550,true);
     createCrosswalk(1150,1350,false);
@@ -1632,17 +1624,6 @@ function createRiver(x,z){
     }
 }
 
-function createLake(x,z){
-
-    if(isWaterPosition(x,z,10)) return null;
-
-    const lake=addPlane(x,0.14,z,145,100,materials.water);
-    lake.userData.baseY=0.14;
-    waterSurfaces.push(lake);
-    lakeAreas.push({x,z,rx:72.5,rz:50});
-    return lake;
-}
-
 function distanceToSegmentSquaredXZ(px,pz,a,b){
     const dx=b.x-a.x;
     const dz=b.z-a.z;
@@ -1659,6 +1640,9 @@ function distanceToSegmentSquaredXZ(px,pz,a,b){
 }
 
 function isWaterPosition(x,z,clearance=0){
+    // Only the continuous city river is a water exclusion.
+    // Zone ponds/lakes are intentionally disabled so all plot interiors
+    // remain dry and available for player-designed layouts.
     const riverRadius=76+clearance;
     const riverRadiusSquared=riverRadius*riverRadius;
 
@@ -1670,11 +1654,7 @@ function isWaterPosition(x,z,clearance=0){
         }
     }
 
-    return lakeAreas.some(area=>{
-        const rx=area.rx+clearance;
-        const rz=area.rz+clearance;
-        return ((x-area.x)/rx)**2+((z-area.z)/rz)**2<=1;
-    });
+    return false;
 }
 
 function roadSegmentCrossesRiver(axis,fixed,min,max,roadWidth){
@@ -1899,8 +1879,7 @@ function buildCityRiver(){
         addRoadCrossings('x',z,minX,maxX,false,CONFIG.roadWidth);
     }
 
-    // Local collector roads that would cross the river are omitted.
-    // Only the connected arterial roads receive bridge decks.
+    // Only connected arterial roads are built between zones and receive bridge decks.
 
     candidates.sort((a,b)=>
         a.priority-b.priority ||
@@ -1993,11 +1972,7 @@ function takeZoneSlots(slots,count,random){
 
 function buildForest(d){
     const random=createZoneRandom(d,11);
-    const pondSide=random()<0.5?-1:1;
-    createLake(
-        d.x+pondSide*(155+random()*55),
-        d.z+(random()-0.5)*170
-    );
+    const houseSide=random()<0.5?-1:1;
 
     const treeCount=22+Math.floor(random()*21);
     const treeTypes=['oak','oak','pine','blossom'];
@@ -2015,7 +1990,7 @@ function buildForest(d){
 
     if(random()>0.22){
         createHouseModel(
-            d.x-pondSide*(205+random()*25),
+            d.x-houseSide*(205+random()*25),
             d.z+(random()-0.5)*250,
             [0x9c8062,0xb6a58a,0x879a8b][Math.floor(random()*3)],
             0.85+random()*0.3
@@ -2094,10 +2069,6 @@ function buildRiverside(d){
 
 function buildPark(d){
     const random=createZoneRandom(d,41);
-    const lakeX=d.x+(random()-0.5)*150;
-    const lakeZ=d.z+(random()-0.5)*130;
-    createLake(lakeX,lakeZ);
-
     const treeCount=15+Math.floor(random()*15);
     for(let i=0;i<treeCount;i++){
         const angle=random()*Math.PI*2;
@@ -2281,11 +2252,6 @@ function buildFarm(d){
         }
     }
 
-    const lakeSide=barnX<d.x?1:-1;
-    createLake(
-        d.x+lakeSide*(215+random()*25),
-        d.z+145+(random()-0.5)*55
-    );
 }
 
 // ============================================================
@@ -3959,36 +3925,21 @@ async function initializeGame(){
         // Create the winding river first so every later system can avoid water.
         buildCityRiver();
 
-        // Main arterial roads are retained and bridged at every river crossing.
-        // Local collector roads are omitted only where they would run through water.
+        // Only the connected main arterial roads are retained and bridged at river crossings.
+        // No black asphalt collector roads or decorative ponds are generated inside zones.
         buildRoadNetwork();
         buildDistricts();
 
-        // Procedural terrain uses the same river/lake exclusion as buildings.
+        // Procedural terrain avoids the main river; all zone interiors stay dry.
         createNaturalTerrain(
             scene,
             districts,
             (x,z)=>isWaterPosition(x,z,8)
         );
 
-        // Street lamps sit beside dry local roads, never in the river.
-        districts.forEach(d=>{
-            const hasLocalRoad=roadSegments.some(road=>
-                !road.vertical&&
-                Math.abs(road.x-d.x)<1&&
-                Math.abs(road.z-(d.z+235))<1
-            );
-
-            if(!hasLocalRoad) return;
-
-            for(let i=0;i<4;i++){
-                createStreetLamp(
-                    d.x-270+i*180,
-                    d.z+210
-                );
-            }
-        });
-
+        // No lamps are pre-placed inside plots.
+        // The Lamp tool snaps player placements to the retained arterial-road shoulders.
+        
         // Gameplay systems.
         createTraffic();
         createRain();
