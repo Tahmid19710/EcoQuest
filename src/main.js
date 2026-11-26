@@ -61,47 +61,127 @@ const ZONE_COLUMNS=10, ZONE_ROWS=7, ZONE_SPACING=800;
 const ZONE_ORIGIN_X=-850, ZONE_ORIGIN_Z=-650;
 
 const DISTRICT_TYPES=[
-    {id:'forest',name:'Green Forest',icon:'🌲',type:'forest'},
-    {id:'downtown',name:'Downtown',icon:'🏙️',type:'downtown'},
-    {id:'riverside',name:'Riverside',icon:'🌊',type:'riverside'},
-    {id:'central',name:'Central Park',icon:'🌳',type:'park'},
-    {id:'residential',name:'Residential',icon:'🏡',type:'residential'},
-    {id:'industrial',name:'Industrial Zone',icon:'🏭',type:'industrial'},
-    {id:'farm',name:'Farm & Lake',icon:'🌾',type:'farm'}
+    {id:'forest',name:'Green Belt & Woodland',icon:'🌲',type:'forest'},
+    {id:'downtown',name:'Commercial & Civic Core',icon:'🏙️',type:'downtown'},
+    {id:'riverside',name:'River & Canal Communities',icon:'🌊',type:'riverside'},
+    {id:'central',name:'Parks & Recreation',icon:'🌳',type:'park'},
+    {id:'residential',name:'Residential Neighbourhoods',icon:'🏡',type:'residential'},
+    {id:'industrial',name:'Industrial & Logistics Estate',icon:'🏭',type:'industrial'},
+    {id:'farm',name:'Agriculture & Orchard Belt',icon:'🌾',type:'farm'}
 ];
 
-const ORIGINAL_ZONE_TYPES={
-    '0:0':'forest','0:1':'downtown','0:2':'riverside',
-    '1:0':'central','1:1':'residential','1:2':'industrial','2:1':'farm'
-};
-const typeCounts=Object.fromEntries(DISTRICT_TYPES.map(t=>[t.id,0]));
-let additionalTypeIndex=0;
-const districts=[];
+// A deliberate city plan: a compact commercial core, residential pockets,
+// a connected industrial estate on the south-east edge, and green/agricultural
+// buffers around the perimeter. Every zone has its own identity and name.
+const ZONE_LAYOUT=[
+    {type:'forest',name:'North Ridge Woodland'},
+    {type:'forest',name:'Botanical Reserve'},
+    {type:'farm',name:'North Orchard Belt'},
+    {type:'farm',name:'Upper Valley Fields'},
+    {type:'riverside',name:'North Canal Village'},
+    {type:'riverside',name:'East Canal Promenade'},
+    {type:'park',name:'North Lake Park'},
+    {type:'residential',name:'Garden Suburb North'},
+    {type:'forest',name:'Wildlife Buffer'},
+    {type:'farm',name:'North-East Market Gardens'},
 
-for(let row=0;row<ZONE_ROWS;row++){
-    for(let col=0;col<ZONE_COLUMNS;col++){
-        const zoneNo=row*ZONE_COLUMNS+col+1;
-        const anchored=ORIGINAL_ZONE_TYPES[`${row}:${col}`];
-        const typeId=anchored ||
-            DISTRICT_TYPES[additionalTypeIndex++%DISTRICT_TYPES.length].id;
-        const base=DISTRICT_TYPES.find(t=>t.id===typeId);
-        const ordinal=++typeCounts[typeId];
-        const suffix=String(ordinal).padStart(2,'0');
+    {type:'forest',name:'West Woodland Estate'},
+    {type:'park',name:'University Green'},
+    {type:'residential',name:'University Housing'},
+    {type:'residential',name:'West Garden Homes'},
+    {type:'downtown',name:'Old Town Market'},
+    {type:'downtown',name:'Civic and Finance Quarter'},
+    {type:'downtown',name:'East Market Quarter'},
+    {type:'riverside',name:'Canal Residential Quarter'},
+    {type:'farm',name:'Meadow Farms'},
+    {type:'forest',name:'North-East Greenbelt'},
 
-        districts.push({
-            id:ordinal===1?base.id:`${base.id}-${suffix}`,
-            name:`${base.name} ${suffix}`,
-            icon:base.icon,type:base.type,
-            x:ZONE_ORIGIN_X+col*ZONE_SPACING,
-            z:ZONE_ORIGIN_Z+row*ZONE_SPACING,
-            zoneNo,row,col
-        });
-    }
+    {type:'residential',name:'West Family Quarter'},
+    {type:'residential',name:'School and Community District'},
+    {type:'park',name:'Central Botanical Gardens'},
+    {type:'downtown',name:'Heritage Commercial Street'},
+    {type:'downtown',name:'Central Business District'},
+    {type:'downtown',name:'Grand Station Quarter'},
+    {type:'downtown',name:'Medical and Civic Quarter'},
+    {type:'riverside',name:'Canal View Apartments'},
+    {type:'industrial',name:'North Industrial Logistics'},
+    {type:'park',name:'Industrial Buffer Park'},
+
+    {type:'residential',name:'South-West Residential Quarter'},
+    {type:'park',name:'Stadium and Recreation Park'},
+    {type:'residential',name:'South-West Mixed Housing'},
+    {type:'downtown',name:'Historic Core'},
+    {type:'downtown',name:'Central Plaza District'},
+    {type:'park',name:'Riverfront Commons'},
+    {type:'residential',name:'South-East Garden Homes'},
+    {type:'industrial',name:'Industrial Estate West'},
+    {type:'industrial',name:'Manufacturing Park A'},
+    {type:'industrial',name:'Manufacturing Park B'},
+
+    {type:'farm',name:'Western Agricultural Edge'},
+    {type:'residential',name:'South Garden Suburb'},
+    {type:'residential',name:'South School Quarter'},
+    {type:'downtown',name:'South Commercial Street'},
+    {type:'park',name:'City Botanical Park'},
+    {type:'residential',name:'South Apartment Quarter'},
+    {type:'residential',name:'Riverside Family Homes'},
+    {type:'industrial',name:'Industrial Estate South'},
+    {type:'industrial',name:'Factory and Warehouse Quarter'},
+    {type:'industrial',name:'Heavy Industry Yard'},
+
+    {type:'farm',name:'South-West Crop Fields'},
+    {type:'farm',name:'Orchard and Dairy Belt'},
+    {type:'forest',name:'South Forest Reserve'},
+    {type:'residential',name:'South-West Family Quarter'},
+    {type:'residential',name:'South Central Housing'},
+    {type:'park',name:'Sports and Recreation Green'},
+    {type:'residential',name:'East Garden Suburb'},
+    {type:'industrial',name:'Logistics Distribution Park'},
+    {type:'industrial',name:'Industrial Utilities Quarter'},
+    {type:'industrial',name:'Freight Terminal District'},
+
+    {type:'forest',name:'Western Greenbelt'},
+    {type:'farm',name:'Lower Valley Agriculture'},
+    {type:'farm',name:'Southern Orchard Belt'},
+    {type:'riverside',name:'Lower River Village'},
+    {type:'park',name:'Wetland Nature Park'},
+    {type:'residential',name:'South Lakeside Homes'},
+    {type:'residential',name:'South-East Residential Quarter'},
+    {type:'industrial',name:'Power and Energy Estate'},
+    {type:'industrial',name:'Recycling and Materials Park'},
+    {type:'industrial',name:'Portside Industrial Estate'}
+];
+
+if(ZONE_LAYOUT.length!==ZONE_COLUMNS*ZONE_ROWS){
+    throw new Error(`EcoQuest zone plan must contain 70 entries; found ${ZONE_LAYOUT.length}.`);
 }
 
+const typeCounts=Object.fromEntries(DISTRICT_TYPES.map(type=>[type.id,0]));
+const districts=ZONE_LAYOUT.map((zone,index)=>{
+    const row=Math.floor(index/ZONE_COLUMNS);
+    const col=index%ZONE_COLUMNS;
+    const zoneNo=index+1;
+    const base=DISTRICT_TYPES.find(type=>type.type===zone.type);
+    if(!base) throw new Error(`Unknown zone type: ${zone.type}`);
+
+    const ordinal=++typeCounts[base.id];
+    const id=ordinal===1?base.id:`${base.id}-${String(ordinal).padStart(2,'0')}`;
+
+    return {
+        id,
+        name:zone.name,
+        icon:base.icon,
+        type:base.type,
+        x:ZONE_ORIGIN_X+col*ZONE_SPACING,
+        z:ZONE_ORIGIN_Z+row*ZONE_SPACING,
+        zoneNo,row,col,
+        variant:zoneNo
+    };
+});
+
 const zoneOptions=DISTRICT_TYPES.map(type=>{
-    const options=districts.filter(z=>z.type===type.type).map(z=>
-        `<option value="${z.id}">Zone ${String(z.zoneNo).padStart(2,'0')} — ${z.icon} ${z.name}</option>`
+    const options=districts.filter(zone=>zone.type===type.type).map(zone=>
+        `<option value="${zone.id}">Zone ${String(zone.zoneNo).padStart(2,'0')} — ${zone.icon} ${zone.name}</option>`
     ).join('');
     return `<optgroup label="${type.name}">${options}</optgroup>`;
 }).join('');
@@ -460,14 +540,18 @@ app.innerHTML = `
    <div class="stage-location" id="location-label">ZONE 11 · 🌳 Central Park 01</div>
    <div class="zone-selector">
     <label for="zone-select">🗺️ SELECT A ZONE · 70 AVAILABLE</label>
-    <select id="zone-select">${zoneOptions}</select>
+    <select id="zone-select">
+    <option value="">🌐 Free Explore — Full City</option>
+    ${zoneOptions}
+   </select>
    </div>
    <div class="game-alert">● LIVE 3D SIMULATION</div>
 
    <div class="camera-controls">
     <button id="zoom-in">+</button>
     <button id="zoom-out">−</button>
-    <button id="camera-reset">⌂</button>
+    <button id="camera-reset" title="Return to selected zone">⌂</button>
+    <button id="camera-overview" title="View the entire 70-zone city">🌐</button>
    </div>
 
    <div class="movement-hint">
@@ -1161,14 +1245,44 @@ function buildRoadNetwork(){
 // 17. CAR — GLB FIRST, PROCEDURAL FALLBACK
 // ============================================================
 
-function createCar(x,z,color=0x347d9a){
+function applyCarPaint(mesh,color){
+    const excluded=/(glass|window|wheel|tire|rubber|light|lamp|chrome|interior)/i;
 
+    mesh.traverse(child=>{
+        if(!child.isMesh||!child.material) return;
+
+        const tintMaterial=material=>{
+            const copy=material.clone();
+            const label=`${child.name||''} ${material.name||''}`;
+
+            if(copy.color&&!excluded.test(label)){
+                const hsl=copy.color.getHSL({h:0,s:0,l:0});
+                if(/body|paint|shell|exterior|car/i.test(label) ||
+                   (hsl.l>0.28&&(copy.roughness??0.8)>0.28)){
+                    copy.color.setHex(color);
+                }
+            }
+            return copy;
+        };
+
+        child.material=Array.isArray(child.material)
+            ?child.material.map(tintMaterial)
+            :tintMaterial(child.material);
+    });
+}
+
+function createCar(x,z,color=0x347d9a){
     const asset=createAsset('car',x,z);
 
-    if(asset) return asset;
+    if(asset){
+        const bounds=new THREE.Box3().setFromObject(asset);
+        const size=bounds.getSize(new THREE.Vector3());
+        asset.userData.forwardAxis=size.x>=size.z?'x':'z';
+        applyCarPaint(asset,color);
+        return asset;
+    }
 
     const group=new THREE.Group();
-
     const body=createMaterial(color,0.32,0.2);
 
     addBox(0,1.4,0,10,2.2,4.8,body,group);
@@ -1176,67 +1290,108 @@ function createCar(x,z,color=0x347d9a){
     addBox(-0.8,3,0,4.8,2.3,3.8,createMaterial(0x294653),group);
 
     const wheelMat=createMaterial(0x191b1b);
-
     [-3.1,3.1].forEach(px=>{
         [-2.4,2.4].forEach(pz=>{
-
             const wheel=addMesh(
                 new THREE.CylinderGeometry(1,1,0.6,16),
                 wheelMat,px,0.95,pz,group
             );
-
             wheel.rotation.z=Math.PI/2;
         });
     });
 
     group.position.set(x,0,z);
+    group.userData.forwardAxis='x';
     scene.add(group);
-
     return group;
 }
 
+function setCarHeading(mesh,dx,dz){
+    if(mesh.userData.forwardAxis==='z'){
+        mesh.rotation.y=Math.atan2(dx,dz);
+    }else{
+        mesh.rotation.y=Math.atan2(-dz,dx);
+    }
+}
+
 // ============================================================
-// 18. TRAFFIC SYSTEM
+// 18. TRAFFIC SYSTEM — TWO-WAY, LANE-BASED CITY TRAFFIC
 // ============================================================
 
 function createTraffic(){
+    const minX=ZONE_ORIGIN_X-ZONE_SPACING/2+30;
+    const maxX=ZONE_ORIGIN_X+(ZONE_COLUMNS-1)*ZONE_SPACING+ZONE_SPACING/2-30;
+    const minZ=ZONE_ORIGIN_Z-ZONE_SPACING/2+30;
+    const maxZ=ZONE_ORIGIN_Z+(ZONE_ROWS-1)*ZONE_SPACING+ZONE_SPACING/2-30;
 
-    const paths=[
-        {x:-1250,z:-250,start:-1250,end:6750,speed:20,color:0x377d9c},
-        {x:6750,z:550,start:6750,end:-1250,speed:-16,color:0xc18b4c},
-        {x:-450,z:-950,start:-950,end:4550,speed:14,color:0x8d9292},
-        {x:350,z:4550,start:4550,end:-950,speed:-12,color:0x9c9b77}
+    const palette=[
+        0x1769aa,0xc62828,0xf4f1e8,0x20252b,
+        0xd49a22,0x287a4b,0x7b4aa1,0x9b9b9b,
+        0x45a4a0,0xe46f32,0x5d6b82,0xc6c9cc
     ];
+    let colourIndex=0;
 
-    paths.forEach((p,i)=>{
+    const addLane=(axis,fixed,direction,min,max,routeIndex)=>{
+        const speed=direction*(31+(routeIndex%3)*3);
+        const spacing=(max-min)/2.45;
 
-        const car=createCar(p.x,p.z,p.color);
-        const vertical=i>=2;
+        for(let carIndex=0;carIndex<2;carIndex++){
+            const coordinate=direction>0
+                ?min+520+carIndex*spacing
+                :max-520-carIndex*spacing;
 
-        if(vertical) car.rotation.y=Math.PI/2;
-        else if(p.speed<0) car.rotation.y=Math.PI;
+            const x=axis==='x'?coordinate:fixed;
+            const z=axis==='x'?fixed:coordinate;
+            const colour=palette[colourIndex++%palette.length];
+            const car=createCar(x,z,colour);
 
-        vehicles.push({mesh:car,path:p,vertical});
+            setCarHeading(
+                car,
+                axis==='x'?direction:0,
+                axis==='z'?direction:0
+            );
+
+            vehicles.push({
+                mesh:car,
+                path:{axis,fixed,min,max,speed,direction}
+            });
+        }
+    };
+
+    // East/west traffic on three separated arterial roads.
+    [0,2,4].forEach((row,index)=>{
+        const roadZ=ZONE_ORIGIN_Z+(row+0.5)*ZONE_SPACING;
+        addLane('x',roadZ+7,1,minX,maxX,index);
+        addLane('x',roadZ-7,-1,minX,maxX,index+1);
     });
+
+    // North/south traffic on three connected avenues.
+    [1,4,7].forEach((col,index)=>{
+        const roadX=ZONE_ORIGIN_X+(col+0.5)*ZONE_SPACING;
+        addLane('z',roadX-7,1,minZ,maxZ,index+2);
+        addLane('z',roadX+7,-1,minZ,maxZ,index+1);
+    });
+
+    console.log(`EcoQuest traffic: ${vehicles.length} coloured vehicles on marked two-way lanes.`);
 }
 
 function updateTraffic(delta){
+    vehicles.forEach(({mesh,path})=>{
+        const coordinate=path.axis==='x'?mesh.position.x:mesh.position.z;
+        let next=coordinate+path.speed*delta;
 
-    vehicles.forEach(({mesh,path,vertical})=>{
+        if(path.direction>0&&next>path.max){
+            next=path.min+(next-path.max);
+        }else if(path.direction<0&&next<path.min){
+            next=path.max-(path.min-next);
+        }
 
-        if(vertical){
-
-            mesh.position.z+=path.speed*delta;
-
-            if(path.speed>0&&mesh.position.z>path.end) mesh.position.z=path.start;
-            if(path.speed<0&&mesh.position.z<path.end) mesh.position.z=path.start;
-
+        if(path.axis==='x'){
+            mesh.position.x=next;
+            mesh.position.z=path.fixed;
         }else{
-
-            mesh.position.x+=path.speed*delta;
-
-            if(path.speed>0&&mesh.position.x>path.end) mesh.position.x=path.start;
-            if(path.speed<0&&mesh.position.x<path.end) mesh.position.x=path.start;
+            mesh.position.z=next;
+            mesh.position.x=path.fixed;
         }
     });
 }
@@ -1307,163 +1462,323 @@ function updateWater(time){
 // 20. DISTRICT ENVIRONMENTS
 // ============================================================
 
+function createZoneRandom(d,salt=0){
+    let state=(Math.imul(d.zoneNo+salt+1,2654435761)+1013904223)>>>0;
+    return ()=>{
+        state=(Math.imul(state,1664525)+1013904223)>>>0;
+        return state/4294967296;
+    };
+}
+
+function takeZoneSlots(slots,count,random){
+    const pool=slots.slice();
+    const selected=[];
+    while(pool.length&&selected.length<count){
+        const index=Math.floor(random()*pool.length);
+        selected.push(pool.splice(index,1)[0]);
+    }
+    return selected;
+}
+
 function buildForest(d){
+    const random=createZoneRandom(d,11);
+    const treeCount=22+Math.floor(random()*21);
+    const treeTypes=['oak','oak','pine','blossom'];
 
-    for(let i=0;i<35;i++){
-
-        const side=i%4;
-        let x,z;
-
-        if(side===0){
-            x=d.x-270+Math.random()*540;
-            z=d.z-220;
-        }else if(side===1){
-            x=d.x-270+Math.random()*540;
-            z=d.z+220;
-        }else if(side===2){
-            x=d.x-260;
-            z=d.z-190+Math.random()*380;
-        }else{
-            x=d.x+260;
-            z=d.z-190+Math.random()*380;
-        }
-
+    for(let i=0;i<treeCount;i++){
+        const angle=random()*Math.PI*2;
+        const radius=125+random()*150;
         createTree(
-            x,z,
-            Math.random()<0.35?'pine':'oak',
-            0.8+Math.random()*0.5
+            d.x+Math.cos(angle)*radius,
+            d.z+Math.sin(angle)*radius,
+            treeTypes[Math.floor(random()*treeTypes.length)],
+            0.72+random()*0.72
         );
     }
 
-    createHouseModel(d.x+220,d.z+130,0x9c8062,1.05);
-    createLake(d.x-200,d.z);
+    const pondSide=random()<0.5?-1:1;
+    createLake(
+        d.x+pondSide*(155+random()*55),
+        d.z+(random()-0.5)*170
+    );
+
+    if(random()>0.22){
+        createHouseModel(
+            d.x-pondSide*(205+random()*25),
+            d.z+(random()-0.5)*250,
+            [0x9c8062,0xb6a58a,0x879a8b][Math.floor(random()*3)],
+            0.85+random()*0.3
+        );
+    }
 }
 
 function buildDowntown(d){
-
-    const buildings=[
-        [-260,-180,48],
-        [-160,-180,60],
-        [220,-180,50],
-        [270,150,43],
-        [-270,150,40]
+    const random=createZoneRandom(d,23);
+    const slots=[
+        [-260,-190],[-145,-205],[0,-205],[150,-205],[260,-170],
+        [-260,5],[260,5],[-205,195],[-65,205],[95,205],[230,180]
     ];
+    const palette=[
+        0x718d9b,0x9aaba9,0x738a88,0x9a9286,
+        0x657b82,0x8b9cae,0x8e887d,0x879a92
+    ];
+    const count=4+Math.floor(random()*4);
 
-    buildings.forEach(([dx,dz,h],i)=>{
-
-        createApartmentModel(
-            d.x+dx,d.z+dz,h,
-            [0x718d9b,0x9aaba9,0x738a88,0x9a9286,0x657b82][i]
+    takeZoneSlots(slots,count,random).forEach(([dx,dz],index)=>{
+        const height=28+Math.floor(random()*48);
+        const building=createApartmentModel(
+            d.x+dx+(random()-0.5)*24,
+            d.z+dz+(random()-0.5)*22,
+            height,
+            palette[Math.floor(random()*palette.length)]
         );
+        if(building) building.rotation.y=(random()-0.5)*0.16;
     });
 
-    createHouseModel(d.x,d.z+200,0x9d9b89,0.85);
+    if(random()>0.25){
+        createHouseModel(
+            d.x+(random()-0.5)*180,
+            d.z+(random()-0.5)*110,
+            [0x9d9b89,0xb7a58f,0x879b91][Math.floor(random()*3)],
+            0.8+random()*0.25
+        );
+    }
+
+    // A distinct paved civic plaza gives each commercial block a different footprint.
+    addPlane(
+        d.x+(random()-0.5)*70,
+        0.065,
+        d.z+(random()-0.5)*70,
+        115+random()*65,
+        90+random()*55,
+        materials.sidewalk
+    );
 }
 
 function buildRiverside(d){
+    const random=createZoneRandom(d,37);
+    const riverSide=random()<0.5?-1:1;
+    const riverZ=d.z+(random()-0.5)*90;
 
-    createRiver(d.x-260,d.z);
+    createRiver(d.x+riverSide*(235+random()*35),riverZ);
 
-    createHouseModel(d.x+230,d.z-170,0xbdb59d,1.1);
-    createHouseModel(d.x+230,d.z+145,0x8e9e99,1.1);
+    const homes=[
+        [ -riverSide*220,-175],
+        [ -riverSide*220,145],
+        [ -riverSide*80,235]
+    ];
+    const homeCount=2+Math.floor(random()*2);
+    takeZoneSlots(homes,homeCount,random).forEach(([dx,dz],index)=>{
+        createHouseModel(
+            d.x+dx,
+            d.z+dz,
+            [0xbdb59d,0x8e9e99,0xc5bda9,0x9ba9a0][index],
+            0.9+random()*0.28
+        );
+    });
 
-    createTree(d.x+260,d.z-70,'oak',1.3);
-    createTree(d.x+260,d.z+75,'oak',1.1);
+    for(let i=0;i<5+Math.floor(random()*5);i++){
+        const x=d.x-riverSide*(90+random()*80);
+        const z=d.z-230+random()*460;
+        createTree(x,z,random()<0.35?'pine':'oak',0.8+random()*0.55);
+    }
 }
 
 function buildPark(d){
+    const random=createZoneRandom(d,41);
+    const lakeX=d.x+(random()-0.5)*150;
+    const lakeZ=d.z+(random()-0.5)*130;
+    createLake(lakeX,lakeZ);
 
-    createLake(d.x-230,d.z-150);
-
-    for(let i=0;i<22;i++){
-
-        const angle=i/22*Math.PI*2;
-
+    const treeCount=15+Math.floor(random()*15);
+    for(let i=0;i<treeCount;i++){
+        const angle=random()*Math.PI*2;
+        const radius=125+random()*135;
         createTree(
-            d.x+Math.cos(angle)*260,
-            d.z+Math.sin(angle)*205,
-            'oak',
-            0.8+Math.random()*0.45
+            d.x+Math.cos(angle)*radius,
+            d.z+Math.sin(angle)*radius,
+            random()<0.28?'blossom':(random()<0.55?'oak':'pine'),
+            0.72+random()*0.65
         );
     }
 
-    for(let i=0;i<24;i++){
-
+    const flowerCount=14+Math.floor(random()*23);
+    const flowerColors=[0xe5a4c3,0xf2d36c,0xece9df,0xa897dd,0xe78d73];
+    for(let i=0;i<flowerCount;i++){
         createFlower(
-            d.x-210+Math.random()*420,
-            d.z-185+Math.random()*370,
-            [0xe5a4c3,0xf2d36c,0xece9df][i%3]
+            d.x-215+random()*430,
+            d.z-190+random()*380,
+            flowerColors[Math.floor(random()*flowerColors.length)]
         );
     }
 
-    addPlane(d.x,0.05,d.z+195,450,12,materials.sidewalk);
+    if(random()>0.35){
+        const pathZ=d.z+(random()-0.5)*260;
+        addPlane(d.x,0.06,pathZ,390,7,materials.sidewalk);
+    }else{
+        const pathX=d.x+(random()-0.5)*260;
+        addPlane(pathX,0.06,d.z,7,390,materials.sidewalk);
+    }
+
+    createBench(d.x+(random()-0.5)*260,d.z+(random()-0.5)*260);
 }
 
 function buildResidential(d){
+    const random=createZoneRandom(d,53);
+    const houseSlots=[
+        [-255,-190],[-90,-205],[90,-205],[255,-190],
+        [-255,185],[-90,200],[90,200],[255,185],
+        [-245,-5],[245,5]
+    ];
+    const houseColors=[
+        0xd3c3a4,0xb8c7c0,0xc6b09a,0xd6d1bc,
+        0xb7a58e,0x9daea2,0xc6bfae,0x8fa09a
+    ];
+    const count=4+Math.floor(random()*3);
+    const selected=takeZoneSlots(houseSlots,count,random);
 
-    createHouseModel(d.x-240,d.z-200,0xd3c3a4,1.1);
-    createHouseModel(d.x+240,d.z-200,0xb8c7c0,1.1);
-    createHouseModel(d.x-240,d.z+195,0xc6b09a,1.1);
-    createHouseModel(d.x+240,d.z+195,0xd6d1bc,1.1);
+    selected.forEach(([dx,dz],index)=>{
+        createHouseModel(
+            d.x+dx+(random()-0.5)*24,
+            d.z+dz+(random()-0.5)*24,
+            houseColors[Math.floor(random()*houseColors.length)],
+            0.88+random()*0.38
+        );
 
-    createApartmentModel(d.x-240,d.z,30,0x8c9c9b);
-    createApartmentModel(d.x+240,d.z,30,0xa6a69b);
+        if(random()>0.58){
+            createTree(
+                d.x+dx+(random()-0.5)*38,
+                d.z+dz+35,
+                random()<0.4?'blossom':'oak',
+                0.7+random()*0.35
+            );
+        }
+    });
+
+    const apartmentCount=Math.floor(random()*3);
+    const apartmentSlots=[[-245,0],[245,0],[-120,130],[120,-130]];
+    takeZoneSlots(apartmentSlots,apartmentCount,random).forEach(([dx,dz],index)=>{
+        createApartmentModel(
+            d.x+dx,
+            d.z+dz,
+            23+Math.floor(random()*15),
+            [0x8c9c9b,0xa6a69b,0x879ba5][index%3]
+        );
+    });
 }
 
 function buildIndustrial(d){
+    const random=createZoneRandom(d,67);
+    const factorySlots=[
+        [-245,-180],[0,-205],[245,-180],
+        [-245,155],[0,185],[245,155]
+    ];
+    const factoryCount=2+Math.floor(random()*3);
 
-    createFactoryModel(d.x-235,d.z-175);
-    createFactoryModel(d.x+235,d.z-175);
+    takeZoneSlots(factorySlots,factoryCount,random).forEach(([dx,dz])=>{
+        const factory=createFactoryModel(d.x+dx,d.z+dz);
+        if(factory) factory.rotation.y=(random()-0.5)*0.12;
+    });
 
+    // Warehousing, loading yards and storage tanks make the industrial estate varied.
     addBox(
-        d.x,9,d.z+190,
-        65,18,45,
-        createMaterial(0x69726d)
+        d.x+(random()-0.5)*100,
+        8+random()*3,
+        d.z+205,
+        75+random()*35,
+        16+random()*6,
+        48+random()*18,
+        createMaterial([0x69726d,0x8b8172,0x777e83][Math.floor(random()*3)])
     );
 
-    for(let i=0;i<5;i++){
-        createSolarPanel(d.x-145+i*70,d.z+90);
+    const tankCount=2+Math.floor(random()*3);
+    for(let i=0;i<tankCount;i++){
+        addMesh(
+            new THREE.CylinderGeometry(13,13,22+random()*12,16),
+            createMaterial([0x9da7a4,0x788b8c,0xa6a18e][i%3],0.65,0.25),
+            d.x-145+i*70,
+            11,
+            d.z+65+(random()-0.5)*35
+        );
+    }
+
+    const solarCount=3+Math.floor(random()*4);
+    for(let i=0;i<solarCount;i++){
+        createSolarPanel(
+            d.x-190+i*62,
+            d.z-65+(random()-0.5)*25
+        );
+    }
+
+    // A planted buffer separates heavy industry from nearby housing.
+    for(let i=0;i<4;i++){
+        createTree(
+            d.x-285+i*190,
+            d.z+285+(random()-0.5)*18,
+            i%2?'pine':'oak',
+            0.7+random()*0.2
+        );
     }
 }
 
 function buildFarm(d){
-
+    const random=createZoneRandom(d,79);
+    const barnX=d.x+(random()<0.5?-1:1)*(205+random()*30);
+    const barnZ=d.z-185+random()*45;
     const barn=new THREE.Group();
-    barn.position.set(d.x-235,0,d.z-180);
+    barn.position.set(barnX,0,barnZ);
 
-    addBox(0,6,0,26,12,21,createMaterial(0xa94e3d),barn);
+    const barnColor=[0xa94e3d,0x9e6744,0xb45d48][Math.floor(random()*3)];
+    addBox(0,6,0,30,12,23,createMaterial(barnColor),barn);
 
     const roof=addMesh(
-        new THREE.ConeGeometry(19,8,4),
+        new THREE.ConeGeometry(20,8,4),
         createMaterial(0x593b30),
         0,15,0,barn
     );
-
     roof.rotation.y=Math.PI/4;
     scene.add(barn);
 
-    for(let row=0;row<7;row++){
+    const rows=5+Math.floor(random()*4);
+    const columns=9+Math.floor(random()*6);
+    const fieldStartX=d.x-170+random()*45;
+    const fieldStartZ=d.z-65+random()*35;
+    const cropGeometry=new THREE.ConeGeometry(1.3,4,4);
+    const cropMaterials=[
+        createMaterial(0x729747),
+        createMaterial(0x8b9b4c),
+        createMaterial(0x668b3f)
+    ];
 
-        const z=d.z+20+row*23;
-
+    for(let row=0;row<rows;row++){
+        const z=fieldStartZ+row*25;
         addBox(
-            d.x+80,0.12,z,
-            300,0.12,2,
+            d.x+15,0.12,z,
+            320,0.12,2,
             createMaterial(0x80623d)
         );
 
-        for(let col=0;col<13;col++){
-
+        for(let col=0;col<columns;col++){
             addMesh(
-                new THREE.ConeGeometry(1.3,4,4),
-                createMaterial(0x729747),
-                d.x-55+col*22,2,z
+                cropGeometry,
+                cropMaterials[(row+col+d.zoneNo)%cropMaterials.length],
+                fieldStartX+col*22,
+                2,
+                z
             );
         }
     }
 
-    createLake(d.x+250,d.z-170);
+    const lakeSide=barnX<d.x?1:-1;
+    createLake(
+        d.x+lakeSide*(215+random()*25),
+        d.z+145+(random()-0.5)*55
+    );
 }
+
+// ============================================================
+// 21. BUILDABLE AREAS
+// ============================================================
 
 // ============================================================
 // 21. BUILDABLE AREAS
@@ -1796,8 +2111,8 @@ function setupCamera(){
     controls.enableRotate=true;
     controls.enableZoom=true;
 
-    controls.minDistance=75;
-    controls.maxDistance=1800;
+    controls.minDistance=60;
+    controls.maxDistance=11000;
     controls.minPolarAngle=0.15;
     controls.maxPolarAngle=Math.PI/2.05;
 
@@ -1805,7 +2120,27 @@ function setupCamera(){
         e.preventDefault();
     });
 
-    goToDistrict('central');
+    goToCityOverview();
+}
+
+function goToCityOverview(){
+    const worldCenterX=ZONE_ORIGIN_X+((ZONE_COLUMNS-1)*ZONE_SPACING)/2;
+    const worldCenterZ=ZONE_ORIGIN_Z+((ZONE_ROWS-1)*ZONE_SPACING)/2;
+
+    controls.target.set(worldCenterX,0,worldCenterZ);
+    camera.position.set(
+        worldCenterX+3600,
+        5600,
+        worldCenterZ+6400
+    );
+    controls.update();
+
+    hud['location-label'].textContent='FULL CITY VIEW · 70 UNIQUE CONNECTED ZONES';
+
+    const zoneSelect=document.getElementById('zone-select');
+    if(zoneSelect) zoneSelect.value='';
+
+    message('Full city view: drag to rotate, right-drag to pan, scroll to explore all 70 zones.');
 }
 
 function goToDistrict(id){
@@ -2477,6 +2812,10 @@ function setupCameraButtons(){
     document.getElementById('camera-reset').addEventListener('click',()=>{
         goToDistrict(currentDistrict);
     });
+
+    document.getElementById('camera-overview').addEventListener('click',()=>{
+        goToCityOverview();
+    });
 }
 
 // ============================================================
@@ -2538,7 +2877,13 @@ function setupInterfaceEvents(){
 
     const zoneSelect=document.getElementById('zone-select');
     if(zoneSelect){
-        zoneSelect.addEventListener('change',()=>goToDistrict(zoneSelect.value));
+        zoneSelect.addEventListener('change',()=>{
+            if(zoneSelect.value){
+                goToDistrict(zoneSelect.value);
+            }else{
+                goToCityOverview();
+            }
+        });
     }
 
     document.querySelectorAll('[data-tool]').forEach(btn=>{
