@@ -24,6 +24,11 @@ const app = document.querySelector('#app');
 
 if (!app) throw new Error('Missing #app element in index.html');
 
+// Coarse-pointer devices receive touch controls and a lighter rendering profile.
+const IS_TOUCH_DEVICE =
+    window.matchMedia('(pointer: coarse)').matches ||
+    window.innerWidth <= 700;
+
 // Currently selected ML Upazila.
 let selectedMLArea = null;
 
@@ -33,7 +38,7 @@ let selectedMLArea = null;
 
 const CONFIG = {
     roadWidth: 38,
-    rainCount: 2500,
+    rainCount: IS_TOUCH_DEVICE ? 900 : 2500,
     cameraSpeed: 300,
     saveKey: 'ecoquest-3d-save-v2'
 };
@@ -233,6 +238,7 @@ let hud = {};
 let economyTimer = 0;
 
 const keys = {};
+const virtualMove = { x: 0, y: 0 };
 
 // ============================================================
 // 3. INTERFACE CSS
@@ -384,7 +390,62 @@ button{font-family:inherit}
 }
 
 #city-game{width:100%;height:100%}
-#city-game canvas{display:block;width:100%;height:100%}
+#city-game canvas{
+ display:block;width:100%;height:100%;
+ touch-action:none;
+ -webkit-user-select:none;
+ user-select:none;
+}
+.mobile-joystick{
+ display:none;
+ position:absolute;
+ left:16px;
+ bottom:18px;
+ z-index:12;
+ width:116px;
+ height:116px;
+ border:1px solid rgba(225,245,220,.55);
+ border-radius:50%;
+ background:radial-gradient(circle,rgba(116,164,112,.28),rgba(13,35,25,.78));
+ box-shadow:0 8px 24px rgba(0,0,0,.35),inset 0 0 18px rgba(220,255,210,.10);
+ touch-action:none;
+ -webkit-user-select:none;
+ user-select:none;
+}
+.mobile-joystick::before{
+ content:"";
+ position:absolute;
+ inset:12px;
+ border:1px dashed rgba(225,245,220,.28);
+ border-radius:50%;
+ pointer-events:none;
+}
+.mobile-joystick-knob{
+ position:absolute;
+ left:50%;
+ top:50%;
+ width:48px;
+ height:48px;
+ border:1px solid #d8f3d0;
+ border-radius:50%;
+ background:linear-gradient(145deg,#7bc879,#28683d);
+ box-shadow:0 4px 14px rgba(0,0,0,.38),inset 0 1px 3px rgba(255,255,255,.35);
+ transform:translate(-50%,-50%);
+ pointer-events:none;
+}
+.mobile-joystick-label{
+ position:absolute;
+ left:50%;
+ bottom:-19px;
+ transform:translateX(-50%);
+ color:#eaf5e5;
+ font-size:9px;
+ font-weight:900;
+ letter-spacing:1px;
+ text-shadow:0 1px 4px #000;
+ pointer-events:none;
+ white-space:nowrap;
+}
 
 .stage-location,.movement-hint,.game-alert{
  position:absolute;
@@ -455,15 +516,39 @@ button{font-family:inherit}
  .stats-strip{flex-basis:100%;grid-template-columns:repeat(6,minmax(0,1fr))}
 }
 
+@media(max-width:700px), (pointer:coarse){
+ .mobile-joystick{display:block}
+ .movement-hint{display:none}
+ .game-stage{height:min(78svh,820px);min-height:480px}
+ .zone-selector{width:min(215px,calc(100% - 24px));padding:7px}
+ .zone-selector label{font-size:8px}
+ .zone-selector select{font-size:10px;padding:8px}
+ .camera-controls{top:116px;right:9px}
+ .camera-controls button{width:36px;height:36px}
+ .eco-light-controls{max-width:calc(100% - 24px)}
+ .eco-light-btn{min-height:34px;touch-action:manipulation}
+ .tool-btn,.action-btn,.nav-btn,.zone-selector select{touch-action:manipulation}
+ .tool-btn{min-width:82px;min-height:48px}
+ .action-btn,.nav-btn{min-height:40px}
+ .game-footer{padding-bottom:14px}
+}
 @media(max-width:550px){
  .stats-strip{grid-template-columns:repeat(2,minmax(0,1fr))}
  .eco-shell{padding:2px}
  .brand{width:100%}
- .game-stage{height:65vh;min-height:430px}
- .zone-selector{width:min(220px,calc(100% - 24px))}
+ .game-stage{height:72svh;min-height:500px}
+ .zone-selector{width:min(205px,calc(100% - 24px))}
  .zone-selector select{font-size:10px;padding:8px}
  .game-alert{top:82px;font-size:9px}
  .camera-controls{top:116px}
+ .mobile-joystick{left:12px;bottom:17px;width:108px;height:108px}
+ .mobile-joystick-knob{width:46px;height:46px}
+}
+@media(max-height:500px) and (orientation:landscape){
+ .game-stage{height:86svh;min-height:320px}
+ .mobile-joystick{width:94px;height:94px;left:12px;bottom:12px}
+ .mobile-joystick-knob{width:40px;height:40px}
+ .camera-controls{top:108px}
 }
 `;
 
@@ -557,7 +642,18 @@ app.innerHTML = `
    </div>
 
    <div class="movement-hint">
-    WASD: Move · Drag: Rotate · Right Drag: Pan · Scroll: Zoom
+    WASD / Stick: Move · Drag: Rotate · Pinch: Zoom & Pan
+   </div>
+
+   <div
+    class="mobile-joystick"
+    id="mobile-joystick"
+    role="group"
+    aria-label="Touch movement joystick"
+    aria-hidden="true"
+   >
+    <div class="mobile-joystick-knob" id="mobile-joystick-knob"></div>
+    <span class="mobile-joystick-label">MOVE</span>
    </div>
 
    <div id="city-game"></div>
@@ -2396,6 +2492,11 @@ function setupCamera(){
     controls.enableRotate=true;
     controls.enableZoom=true;
 
+    // One-finger drag rotates; two-finger gestures zoom and pan on touchscreens.
+    controls.touches.ONE=THREE.TOUCH.ROTATE;
+    controls.touches.TWO=THREE.TOUCH.DOLLY_PAN;
+    controls.screenSpacePanning=true;
+
     controls.minDistance=60;
     controls.maxDistance=24000;
     controls.minPolarAngle=0.025;
@@ -2498,12 +2599,19 @@ function updateKeyboard(delta){
         .crossVectors(forward,new THREE.Vector3(0,1,0))
         .normalize();
 
-    const movement=new THREE.Vector3();
+    const forwardInput =
+        (keys.w || keys.arrowup ? 1 : 0) -
+        (keys.s || keys.arrowdown ? 1 : 0) -
+        virtualMove.y;
 
-    if(keys.w||keys.arrowup) movement.add(forward);
-    if(keys.s||keys.arrowdown) movement.sub(forward);
-    if(keys.d||keys.arrowright) movement.add(right);
-    if(keys.a||keys.arrowleft) movement.sub(right);
+    const sideInput =
+        (keys.d || keys.arrowright ? 1 : 0) -
+        (keys.a || keys.arrowleft ? 1 : 0) +
+        virtualMove.x;
+
+    const movement=new THREE.Vector3();
+    movement.addScaledVector(forward,forwardInput);
+    movement.addScaledVector(right,sideInput);
 
     if(movement.lengthSq()>0){
 
@@ -2512,6 +2620,92 @@ function updateKeyboard(delta){
         controls.target.add(movement);
         camera.position.add(movement);
     }
+}
+
+// ============================================================
+// MOBILE TOUCH MOVEMENT
+// ============================================================
+
+function setupMobileControls(){
+
+    const joystick=document.getElementById('mobile-joystick');
+    const knob=document.getElementById('mobile-joystick-knob');
+
+    if(!joystick || !knob) return;
+
+    let activePointerId=null;
+
+    const resetJoystick=()=>{
+        activePointerId=null;
+        virtualMove.x=0;
+        virtualMove.y=0;
+        knob.style.transform='translate(-50%,-50%)';
+    };
+
+    const updateJoystick=(event)=>{
+
+        const rect=joystick.getBoundingClientRect();
+        const maxRadius=rect.width*0.31;
+
+        let dx=event.clientX-(rect.left+rect.width/2);
+        let dy=event.clientY-(rect.top+rect.height/2);
+
+        const distance=Math.hypot(dx,dy);
+
+        if(distance>maxRadius){
+            const scale=maxRadius/distance;
+            dx*=scale;
+            dy*=scale;
+        }
+
+        virtualMove.x=THREE.MathUtils.clamp(dx/maxRadius,-1,1);
+        virtualMove.y=THREE.MathUtils.clamp(dy/maxRadius,-1,1);
+
+        knob.style.transform=
+            `translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px))`;
+    };
+
+    joystick.addEventListener('pointerdown',event=>{
+
+        if(event.pointerType==='mouse' && event.button!==0) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        activePointerId=event.pointerId;
+
+        if(joystick.setPointerCapture){
+            joystick.setPointerCapture(event.pointerId);
+        }
+
+        updateJoystick(event);
+    });
+
+    joystick.addEventListener('pointermove',event=>{
+
+        if(activePointerId!==event.pointerId) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        updateJoystick(event);
+    });
+
+    const releaseJoystick=event=>{
+
+        if(activePointerId!==event.pointerId) return;
+
+        event.preventDefault();
+        resetJoystick();
+    };
+
+    joystick.addEventListener('pointerup',releaseJoystick);
+    joystick.addEventListener('pointercancel',releaseJoystick);
+    joystick.addEventListener('lostpointercapture',event=>{
+        if(activePointerId===event.pointerId) resetJoystick();
+    });
+
+    window.addEventListener('blur',resetJoystick);
 }
 
 // ============================================================
@@ -2734,6 +2928,11 @@ function updateMLAreaIndicator() {
 
         stage.appendChild(indicator);
     }
+
+    indicator.style.bottom =
+        window.matchMedia('(max-width:700px), (pointer:coarse)').matches
+            ? '138px'
+            : '12px';
 
     if (!selectedMLArea) {
         indicator.hidden = true;
@@ -3391,7 +3590,7 @@ async function initializeGame(){
         );
 
         renderer=new THREE.WebGLRenderer({
-            antialias:true,
+            antialias:!IS_TOUCH_DEVICE,
             powerPreference:'high-performance'
         });
 
@@ -3401,11 +3600,17 @@ async function initializeGame(){
         );
 
         renderer.setPixelRatio(
-            Math.min(window.devicePixelRatio,1.5)
+            Math.min(
+                window.devicePixelRatio,
+                IS_TOUCH_DEVICE ? 1.2 : 1.5
+            )
         );
 
-        renderer.shadowMap.enabled=true;
-        renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+        // Keep the city responsive on mobile GPUs while preserving desktop shadows.
+        renderer.shadowMap.enabled=!IS_TOUCH_DEVICE;
+        renderer.shadowMap.type=IS_TOUCH_DEVICE
+            ? THREE.BasicShadowMap
+            : THREE.PCFSoftShadowMap;
 
         renderer.outputColorSpace=THREE.SRGBColorSpace;
         renderer.toneMapping=THREE.ACESFilmicToneMapping;
@@ -3479,6 +3684,7 @@ async function initializeGame(){
         setupCamera();
         setupInteraction();
         setupInterfaceEvents();
+        setupMobileControls();
 
         // Morning / Noon / Sunset / Night buttons.
         setupLightingControls();
