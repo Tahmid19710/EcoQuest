@@ -212,6 +212,8 @@ let missionSystem;
 
 let selectedTool = 'oak';
 let currentDistrict = 'central';
+let isCityOverview = true;
+const riverBridges = [];
 
 let placedItems = [];
 let buildTiles = [];
@@ -1393,6 +1395,8 @@ function updateTraffic(delta){
             mesh.position.z=next;
             mesh.position.x=path.fixed;
         }
+
+        mesh.position.y=getBridgeElevation(path,next);
     });
 }
 
@@ -1444,6 +1448,225 @@ function createLake(x,z){
 
     const lake=addPlane(x,0.14,z,145,100,materials.water);
     waterSurfaces.push(lake);
+}
+
+function createRiverRibbon(curve,halfWidth,segments=420){
+    const positions=[];
+    const indices=[];
+    const leftBank=[];
+    const rightBank=[];
+
+    for(let i=0;i<=segments;i++){
+        const t=i/segments;
+        const center=curve.getPointAt(t);
+        const tangent=curve.getTangentAt(t);
+        const normal=new THREE.Vector3(-tangent.z,0,tangent.x).normalize();
+        const width=halfWidth+Math.sin(t*Math.PI*8)*7;
+        const left=center.clone().addScaledVector(normal,width);
+        const right=center.clone().addScaledVector(normal,-width);
+
+        positions.push(left.x,0,left.z,right.x,0,right.z);
+        leftBank.push(new THREE.Vector3(left.x,0,left.z));
+        rightBank.push(new THREE.Vector3(right.x,0,right.z));
+
+        if(i<segments){
+            const a=i*2;
+            indices.push(a,a+1,a+2,a+1,a+3,a+2);
+        }
+    }
+
+    const geometry=new THREE.BufferGeometry();
+    geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+
+    const material=materials.water.clone();
+    material.side=THREE.DoubleSide;
+    material.transparent=true;
+    material.opacity=0.92;
+
+    const water=new THREE.Mesh(geometry,material);
+    water.position.y=0.18;
+    water.receiveShadow=false;
+    scene.add(water);
+    waterSurfaces.push(water);
+
+    const bankMaterial=createMaterial(0x9b916e,0.95,0);
+    [leftBank,rightBank].forEach(points=>{
+        const bankCurve=new THREE.CatmullRomCurve3(points);
+        const bank=new THREE.Mesh(
+            new THREE.TubeGeometry(bankCurve,segments,3,7,false),
+            bankMaterial
+        );
+        bank.position.y=0.08;
+        bank.receiveShadow=true;
+        scene.add(bank);
+    });
+}
+
+function createRiverBridge(x,z,axis,span){
+    const bridgeWidth=52;
+    const approachLength=72;
+    const deckHeight=2.1;
+    const deckThickness=1.8;
+    const asphalt=makeRoadMaterial(span,bridgeWidth);
+    const concrete=createMaterial(0x777d7b,0.86,0.08);
+    const railMaterial=createMaterial(0x555e5d,0.68,0.18);
+
+    addBox(
+        x,deckHeight-deckThickness/2,z,
+        axis==='x'?span:bridgeWidth,
+        deckThickness,
+        axis==='z'?span:bridgeWidth,
+        concrete
+    );
+
+    addPlane(
+        x,deckHeight+0.015,z,
+        axis==='x'?span:bridgeWidth,
+        axis==='z'?span:bridgeWidth,
+        asphalt
+    );
+
+    [-1,1].forEach(side=>{
+        if(axis==='x'){
+            addBox(x,deckHeight+0.72,z+side*(bridgeWidth/2-1),span,1.35,1.2,railMaterial);
+        }else{
+            addBox(x+side*(bridgeWidth/2-1),deckHeight+0.72,z,1.2,1.35,span,railMaterial);
+        }
+    });
+
+    [-0.32,0,0.32].forEach(offset=>{
+        if(axis==='x'){
+            addBox(x+span*offset,0.98,z,9,1.95,9,concrete);
+        }else{
+            addBox(x,0.98,z+span*offset,9,1.95,9,concrete);
+        }
+    });
+
+    const slope=Math.atan2(deckHeight,approachLength);
+    [-1,1].forEach(side=>{
+        const ramp=addBox(
+            axis==='x'?x+side*(span/2+approachLength/2):x,
+            deckHeight/2-0.36,
+            axis==='z'?z+side*(span/2+approachLength/2):z,
+            axis==='x'?approachLength:bridgeWidth,
+            0.72,
+            axis==='z'?approachLength:bridgeWidth,
+            asphalt
+        );
+
+        if(axis==='x'){
+            ramp.rotation.z=-side*slope;
+        }else{
+            ramp.rotation.x=side*slope;
+        }
+    });
+
+    riverBridges.push({x,z,axis,span,approachLength,deckHeight});
+}
+
+function buildCityRiver(){
+    riverBridges.length=0;
+
+    const riverPoints=[
+        [-1250,-1050],[-900,-520],[-350,-180],[250,100],
+        [820,560],[1420,760],[1940,470],[2460,650],
+        [2920,1120],[3550,1510],[4210,1320],[4740,1650],
+        [5290,2220],[5900,2410],[6440,2960],[6900,3650],[7350,4700]
+    ].map(([x,z])=>new THREE.Vector3(x,0,z));
+
+    const curve=new THREE.CatmullRomCurve3(riverPoints,false,'centripetal',0.5);
+    createRiverRibbon(curve,76,480);
+
+    const samples=Array.from({length:481},(_,i)=>curve.getPointAt(i/480));
+    const candidates=[];
+
+    const addRoadCrossing=(axis,fixed,min,max,local=false)=>{
+        for(let i=0;i<samples.length-1;i++){
+            const a=samples[i];
+            const b=samples[i+1];
+            const av=axis==='x'?a.z:a.x;
+            const bv=axis==='x'?b.z:b.x;
+
+            if((av-fixed)*(bv-fixed)>0||Math.abs(bv-av)<0.0001) continue;
+
+            const t=(fixed-av)/(bv-av);
+            if(t<0||t>1) continue;
+
+            const x=axis==='x'?a.x+(b.x-a.x)*t:fixed;
+            const z=axis==='x'?fixed:a.z+(b.z-a.z)*t;
+            const along=axis==='x'?x:z;
+            if(along<min||along>max) continue;
+
+            const curveT=(i+t)/480;
+            const tangent=curve.getTangentAt(curveT);
+            const acrossComponent=axis==='x'?Math.abs(tangent.z):Math.abs(tangent.x);
+            const span=THREE.MathUtils.clamp(210/Math.max(0.28,acrossComponent),170,330);
+
+            candidates.push({
+                x,z,axis:axis==='x'?'x':'z',span,
+                local,priority:local?1:0
+            });
+            return;
+        }
+    };
+
+    const minX=ZONE_ORIGIN_X-400;
+    const maxX=ZONE_ORIGIN_X+(ZONE_COLUMNS-1)*ZONE_SPACING+400;
+    const minZ=ZONE_ORIGIN_Z-400;
+    const maxZ=ZONE_ORIGIN_Z+(ZONE_ROWS-1)*ZONE_SPACING+400;
+
+    for(let col=0;col<ZONE_COLUMNS-1;col++){
+        const x=ZONE_ORIGIN_X+(col+0.5)*ZONE_SPACING;
+        addRoadCrossing('z',x,minZ,maxZ,false);
+    }
+
+    for(let row=0;row<ZONE_ROWS-1;row++){
+        const z=ZONE_ORIGIN_Z+(row+0.5)*ZONE_SPACING;
+        addRoadCrossing('x',z,minX,maxX,false);
+    }
+
+    districts.forEach(d=>{
+        addRoadCrossing('x',d.z+235,d.x-325,d.x+325,true);
+    });
+
+    candidates.sort((a,b)=>a.priority-b.priority);
+    const accepted=[];
+
+    candidates.forEach(candidate=>{
+        const duplicate=accepted.some(existing=>
+            Math.hypot(existing.x-candidate.x,existing.z-candidate.z)<165
+        );
+        if(duplicate) return;
+
+        accepted.push(candidate);
+        createRiverBridge(candidate.x,candidate.z,candidate.axis,candidate.span);
+    });
+
+    console.log("EcoQuest river: one continuous winding channel with "+riverBridges.length+" road bridges.");
+}
+
+function getBridgeElevation(path,coordinate){
+    for(const bridge of riverBridges){
+        if(bridge.axis!==path.axis) continue;
+
+        const crossAxisDistance=path.axis==='x'
+            ?Math.abs(path.fixed-bridge.z)
+            :Math.abs(path.fixed-bridge.x);
+        if(crossAxisDistance>28) continue;
+
+        const center=path.axis==='x'?bridge.x:bridge.z;
+        const distance=Math.abs(coordinate-center);
+        const deckHalf=bridge.span/2;
+        const total=deckHalf+bridge.approachLength;
+
+        if(distance<=deckHalf) return bridge.deckHeight;
+        if(distance<=total){
+            return bridge.deckHeight*(1-(distance-deckHalf)/bridge.approachLength);
+        }
+    }
+    return 0;
 }
 
 function updateWater(time){
@@ -1558,9 +1781,6 @@ function buildDowntown(d){
 function buildRiverside(d){
     const random=createZoneRandom(d,37);
     const riverSide=random()<0.5?-1:1;
-    const riverZ=d.z+(random()-0.5)*90;
-
-    createRiver(d.x+riverSide*(235+random()*35),riverZ);
 
     const homes=[
         [ -riverSide*220,-175],
@@ -1836,9 +2056,20 @@ function buildDistricts(){
 
         addPlane(
             d.x,0.05,d.z,
-            700,700,
+            740,740,
             d.type==='park'?materials.parkGrass:materials.grass
         );
+
+        const boundaryMaterial=new THREE.MeshBasicMaterial({
+            color:0x315c40,
+            transparent:true,
+            opacity:0.34
+        });
+        const halfZone=370;
+        addBox(d.x,0.13,d.z-halfZone,740,0.12,2,boundaryMaterial);
+        addBox(d.x,0.13,d.z+halfZone,740,0.12,2,boundaryMaterial);
+        addBox(d.x-halfZone,0.13,d.z,2,0.12,740,boundaryMaterial);
+        addBox(d.x+halfZone,0.13,d.z,2,0.12,740,boundaryMaterial);
 
         switch(d.type){
 
@@ -2108,8 +2339,8 @@ function setupCamera(){
     controls.enableZoom=true;
 
     controls.minDistance=60;
-    controls.maxDistance=11000;
-    controls.minPolarAngle=0.15;
+    controls.maxDistance=24000;
+    controls.minPolarAngle=0.025;
     controls.maxPolarAngle=Math.PI/2.05;
 
     renderer.domElement.addEventListener('contextmenu',e=>{
@@ -2122,13 +2353,23 @@ function setupCamera(){
 function goToCityOverview(){
     const worldCenterX=ZONE_ORIGIN_X+((ZONE_COLUMNS-1)*ZONE_SPACING)/2;
     const worldCenterZ=ZONE_ORIGIN_Z+((ZONE_ROWS-1)*ZONE_SPACING)/2;
+    const worldWidth=ZONE_COLUMNS*ZONE_SPACING+500;
+    const worldDepth=ZONE_ROWS*ZONE_SPACING+500;
+    const aspect=Math.max(0.5,renderer.domElement.clientWidth/Math.max(1,renderer.domElement.clientHeight));
+    const halfFov=Math.tan(THREE.MathUtils.degToRad(camera.fov/2));
+    const fitForWidth=(worldWidth/2)/(halfFov*aspect);
+    const fitForDepth=(worldDepth/2)/halfFov;
+    const overviewHeight=Math.max(fitForWidth,fitForDepth)*1.24;
 
+    isCityOverview=true;
     controls.target.set(worldCenterX,0,worldCenterZ);
     camera.position.set(
-        worldCenterX+3600,
-        5600,
-        worldCenterZ+6400
+        worldCenterX+overviewHeight*0.012,
+        overviewHeight,
+        worldCenterZ+overviewHeight*0.035
     );
+    camera.far=45000;
+    camera.updateProjectionMatrix();
     controls.update();
 
     hud['location-label'].textContent='FULL CITY VIEW · 70 UNIQUE CONNECTED ZONES';
@@ -2136,7 +2377,7 @@ function goToCityOverview(){
     const zoneSelect=document.getElementById('zone-select');
     if(zoneSelect) zoneSelect.value='';
 
-    message('Full city view: drag to rotate, right-drag to pan, scroll to explore all 70 zones.');
+    message('Full city view: all 70 zones are visible. Scroll to zoom, left-drag to rotate, right-drag to pan.');
 }
 
 function goToDistrict(id){
@@ -2145,6 +2386,7 @@ function goToDistrict(id){
     if(!d) return;
 
     currentDistrict=id;
+    isCityOverview=false;
 
     controls.target.set(d.x,0,d.z);
 
@@ -3072,13 +3314,13 @@ async function initializeGame(){
         scene=new THREE.Scene();
 
         scene.background=new THREE.Color(0x9db8c0);
-        scene.fog=new THREE.Fog(0x9db8c0,2200,10500);
+        scene.fog=new THREE.Fog(0x9db8c0,18000,38000);
 
         camera=new THREE.PerspectiveCamera(
             48,
             container.clientWidth/container.clientHeight,
             0.1,
-            15000
+            45000
         );
 
         renderer=new THREE.WebGLRenderer({
@@ -3146,6 +3388,9 @@ async function initializeGame(){
         // Add procedural vegetation.
         createNaturalTerrain(scene,districts);
 
+        // One winding river crosses the city; bridges are placed at road crossings.
+        buildCityRiver();
+
         // Street furniture.
         districts.forEach(d=>{
 
@@ -3207,6 +3452,10 @@ async function initializeGame(){
             camera.updateProjectionMatrix();
 
             renderer.setSize(width,height);
+
+            if(isCityOverview&&controls){
+                goToCityOverview();
+            }
         });
 
         resizeObserver.observe(container);
