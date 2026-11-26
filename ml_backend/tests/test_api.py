@@ -1,3 +1,4 @@
+import json
 import unittest
 
 import numpy as np
@@ -95,7 +96,8 @@ class ApiIntegrationTests(unittest.TestCase):
 
         response = self.client.post(
             "/api/model/predict",
-            json=payload,
+            content=json.dumps(payload, allow_nan=True),
+            headers={"Content-Type": "application/json"},
         )
 
         self.assertEqual(response.status_code, 422)
