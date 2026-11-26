@@ -317,7 +317,7 @@ button{font-family:inherit}
 
 .stage-location{top:12px;left:12px}
 .movement-hint{bottom:12px;left:12px;color:#d7e8d3}
-.game-alert{top:70px;right:12px;color:#9df3a4}
+.game-alert{top:82px;right:12px;color:#9df3a4}
 
 .zone-selector{
  position:absolute;top:12px;right:12px;z-index:8;
@@ -337,7 +337,7 @@ button{font-family:inherit}
 
 .camera-controls{
  position:absolute;
- top:108px;
+ top:116px;
  right:12px;
  z-index:6;
  display:flex;
@@ -1211,7 +1211,7 @@ function createTraffic(){
     paths.forEach((p,i)=>{
 
         const car=createCar(p.x,p.z,p.color);
-        const vertical=i>=4;
+        const vertical=i>=2;
 
         if(vertical) car.rotation.y=Math.PI/2;
         else if(p.speed<0) car.rotation.y=Math.PI;
