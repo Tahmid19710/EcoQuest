@@ -604,7 +604,7 @@ function noiseTexture(color, repeat = 8) {
     ctx.fillRect(0, 0, 512, 512);
 
     // Very subtle natural surface variation.
-    for (let i = 0; i < 7000; i++) {
+    for (let i = 0; i < 2200; i++) {
 
         const x = Math.random() * 512;
         const y = Math.random() * 512;
@@ -612,13 +612,13 @@ function noiseTexture(color, repeat = 8) {
         const light = Math.random() > 0.5;
 
         ctx.fillStyle = light
-            ? `rgba(195,210,150,${Math.random() * 0.045})`
-            : `rgba(35,55,30,${Math.random() * 0.045})`;
+            ? `rgba(195,210,150,${Math.random() * 0.035})`
+            : `rgba(35,55,30,${Math.random() * 0.035})`;
 
         ctx.fillRect(
             x,
             y,
-            Math.random() * 4 + 1,
+            Math.random() * 8 + 3,
             Math.random() * 4 + 1
         );
     }
@@ -654,12 +654,12 @@ function createMaterial(color,roughness=0.9,metalness=0){
 function initializeMaterials(){
 
     materials.grass=new THREE.MeshStandardMaterial({
-        map:noiseTexture('#738d56',14),
+        map:noiseTexture('#738d56',7),
         roughness:1
     });
 
     materials.parkGrass=new THREE.MeshStandardMaterial({
-        map:noiseTexture('#638e4a',12),
+        map:noiseTexture('#638e4a',6),
         roughness:1
     });
 
@@ -1082,6 +1082,9 @@ function createRoad(x, z, length, width, vertical = false) {
     const roadD = vertical ? length : width;
 
     const asphalt = makeRoadMaterial(roadW, roadD);
+    asphalt.polygonOffset = true;
+    asphalt.polygonOffsetFactor = vertical ? -2 : -1;
+    asphalt.polygonOffsetUnits = vertical ? -2 : -1;
 
     const road = addPlane(
         x, 0.085, z,
@@ -1091,6 +1094,7 @@ function createRoad(x, z, length, width, vertical = false) {
 
     road.castShadow = false;
     road.receiveShadow = false;
+    road.renderOrder = 2;
 
     const white = makeMarkingMaterial(0xe6e6dc);
     const yellow = makeMarkingMaterial(0xe8c65e);
@@ -1407,6 +1411,7 @@ function updateTraffic(delta){
 function createRiver(x,z){
 
     const water=addPlane(x,0.13,z,130,450,materials.water);
+    water.userData.baseY=0.13;
     waterSurfaces.push(water);
 
     [-1,1].forEach(side=>{
@@ -1447,6 +1452,7 @@ function createRiver(x,z){
 function createLake(x,z){
 
     const lake=addPlane(x,0.14,z,145,100,materials.water);
+    lake.userData.baseY=0.14;
     waterSurfaces.push(lake);
 }
 
@@ -1482,12 +1488,16 @@ function createRiverRibbon(curve,halfWidth,segments=420){
 
     const material=materials.water.clone();
     material.side=THREE.DoubleSide;
-    material.transparent=true;
-    material.opacity=0.92;
+    material.transparent=false;
+    material.opacity=1;
+    material.depthWrite=true;
+    material.depthTest=true;
 
     const water=new THREE.Mesh(geometry,material);
     water.position.y=0.18;
+    water.userData.baseY=0.18;
     water.receiveShadow=false;
+    water.renderOrder=3;
     scene.add(water);
     waterSurfaces.push(water);
 
@@ -1498,18 +1508,25 @@ function createRiverRibbon(curve,halfWidth,segments=420){
             new THREE.TubeGeometry(bankCurve,segments,3,7,false),
             bankMaterial
         );
-        bank.position.y=0.08;
+        bank.position.y=0.12;
         bank.receiveShadow=true;
         scene.add(bank);
     });
 }
 
-function createRiverBridge(x,z,axis,span){
-    const bridgeWidth=52;
-    const approachLength=72;
+function createRiverBridge(x,z,axis,span,roadWidth=CONFIG.roadWidth){
+    const bridgeWidth=Math.max(34,roadWidth+14);
+    const approachLength=84;
     const deckHeight=2.1;
     const deckThickness=1.8;
-    const asphalt=makeRoadMaterial(span,bridgeWidth);
+    const asphalt=makeRoadMaterial(
+        axis==='x'?span:bridgeWidth,
+        axis==='z'?span:bridgeWidth
+    );
+    asphalt.polygonOffset=true;
+    asphalt.polygonOffsetFactor=-3;
+    asphalt.polygonOffsetUnits=-3;
+
     const concrete=createMaterial(0x777d7b,0.86,0.08);
     const railMaterial=createMaterial(0x555e5d,0.68,0.18);
 
@@ -1521,12 +1538,13 @@ function createRiverBridge(x,z,axis,span){
         concrete
     );
 
-    addPlane(
+    const deck=addPlane(
         x,deckHeight+0.015,z,
         axis==='x'?span:bridgeWidth,
         axis==='z'?span:bridgeWidth,
         asphalt
     );
+    deck.renderOrder=4;
 
     [-1,1].forEach(side=>{
         if(axis==='x'){
@@ -1563,7 +1581,9 @@ function createRiverBridge(x,z,axis,span){
         }
     });
 
-    riverBridges.push({x,z,axis,span,approachLength,deckHeight});
+    riverBridges.push({
+        x,z,axis,span,approachLength,deckHeight,bridgeWidth
+    });
 }
 
 function buildCityRiver(){
@@ -1577,38 +1597,62 @@ function buildCityRiver(){
     ].map(([x,z])=>new THREE.Vector3(x,0,z));
 
     const curve=new THREE.CatmullRomCurve3(riverPoints,false,'centripetal',0.5);
-    createRiverRibbon(curve,76,480);
+    createRiverRibbon(curve,76,640);
 
-    const samples=Array.from({length:481},(_,i)=>curve.getPointAt(i/480));
+    const sampleCount=960;
+    const samples=Array.from(
+        {length:sampleCount+1},
+        (_,i)=>curve.getPointAt(i/sampleCount)
+    );
     const candidates=[];
 
-    const addRoadCrossing=(axis,fixed,min,max,local=false)=>{
-        for(let i=0;i<samples.length-1;i++){
+    // Collect every crossing along a road line, not just the first one.
+    const addRoadCrossings=(roadAxis,fixed,min,max,local=false,roadWidth=CONFIG.roadWidth)=>{
+        for(let i=0;i<sampleCount;i++){
             const a=samples[i];
             const b=samples[i+1];
-            const av=axis==='x'?a.z:a.x;
-            const bv=axis==='x'?b.z:b.x;
+            const av=roadAxis==='x'?a.z:a.x;
+            const bv=roadAxis==='x'?b.z:b.x;
 
             if((av-fixed)*(bv-fixed)>0||Math.abs(bv-av)<0.0001) continue;
 
             const t=(fixed-av)/(bv-av);
             if(t<0||t>1) continue;
 
-            const x=axis==='x'?a.x+(b.x-a.x)*t:fixed;
-            const z=axis==='x'?fixed:a.z+(b.z-a.z)*t;
-            const along=axis==='x'?x:z;
+            const x=roadAxis==='x'
+                ?a.x+(b.x-a.x)*t
+                :fixed;
+            const z=roadAxis==='x'
+                ?fixed
+                :a.z+(b.z-a.z)*t;
+            const along=roadAxis==='x'?x:z;
+
             if(along<min||along>max) continue;
 
-            const curveT=(i+t)/480;
+            const curveT=(i+t)/sampleCount;
             const tangent=curve.getTangentAt(curveT);
-            const acrossComponent=axis==='x'?Math.abs(tangent.z):Math.abs(tangent.x);
-            const span=THREE.MathUtils.clamp(210/Math.max(0.28,acrossComponent),170,330);
+            const crossingComponent=roadAxis==='x'
+                ?Math.abs(tangent.z)
+                :Math.abs(tangent.x);
+
+            // A near-parallel river segment is not a safe bridge crossing.
+            if(crossingComponent<0.16) continue;
+
+            const span=THREE.MathUtils.clamp(
+                220/crossingComponent,
+                190,
+                620
+            );
 
             candidates.push({
-                x,z,axis:axis==='x'?'x':'z',span,
-                local,priority:local?1:0
+                x,z,
+                axis:roadAxis,
+                span,
+                roadWidth,
+                local,
+                priority:local?1:0,
+                crossingComponent
             });
-            return;
         }
     };
 
@@ -1617,34 +1661,52 @@ function buildCityRiver(){
     const minZ=ZONE_ORIGIN_Z-400;
     const maxZ=ZONE_ORIGIN_Z+(ZONE_ROWS-1)*ZONE_SPACING+400;
 
+    // Main north-south avenues.
     for(let col=0;col<ZONE_COLUMNS-1;col++){
         const x=ZONE_ORIGIN_X+(col+0.5)*ZONE_SPACING;
-        addRoadCrossing('z',x,minZ,maxZ,false);
+        addRoadCrossings('z',x,minZ,maxZ,false,CONFIG.roadWidth);
     }
 
+    // Main east-west arterial roads.
     for(let row=0;row<ZONE_ROWS-1;row++){
         const z=ZONE_ORIGIN_Z+(row+0.5)*ZONE_SPACING;
-        addRoadCrossing('x',z,minX,maxX,false);
+        addRoadCrossings('x',z,minX,maxX,false,CONFIG.roadWidth);
     }
 
+    // Neighbourhood access roads inside each zone.
     districts.forEach(d=>{
-        addRoadCrossing('x',d.z+235,d.x-325,d.x+325,true);
+        addRoadCrossings('x',d.z+235,d.x-325,d.x+325,true,22);
     });
 
-    candidates.sort((a,b)=>a.priority-b.priority);
-    const accepted=[];
+    // Prioritise main roads and the most perpendicular crossing when two
+    // candidate intersections are effectively at the same river location.
+    candidates.sort((a,b)=>
+        a.priority-b.priority ||
+        b.crossingComponent-a.crossingComponent
+    );
 
+    const accepted=[];
     candidates.forEach(candidate=>{
         const duplicate=accepted.some(existing=>
-            Math.hypot(existing.x-candidate.x,existing.z-candidate.z)<165
+            existing.axis===candidate.axis &&
+            Math.hypot(existing.x-candidate.x,existing.z-candidate.z)<85
         );
         if(duplicate) return;
 
         accepted.push(candidate);
-        createRiverBridge(candidate.x,candidate.z,candidate.axis,candidate.span);
+        createRiverBridge(
+            candidate.x,
+            candidate.z,
+            candidate.axis,
+            candidate.span,
+            candidate.roadWidth
+        );
     });
 
-    console.log("EcoQuest river: one continuous winding channel with "+riverBridges.length+" road bridges.");
+    console.log(
+        'EcoQuest river: continuous winding channel; '+
+        riverBridges.length+' bridge decks cover all detected road crossings.'
+    );
 }
 
 function getBridgeElevation(path,coordinate){
@@ -1671,10 +1733,14 @@ function getBridgeElevation(path,coordinate){
 
 function updateWater(time){
 
-    waterSurfaces.forEach((water,i)=>{
-        water.position.y=0.13+Math.sin(time+i)*0.025;
+    // Keep river and lake surfaces stable to prevent depth-buffer shimmer.
+    waterSurfaces.forEach(water=>{
+        if(Number.isFinite(water.userData.baseY)){
+            water.position.y=water.userData.baseY;
+        }
     });
 
+    // Small horizontal ripple animation remains independent of water elevation.
     waterRipples.forEach((r,i)=>{
         const s=1+Math.sin(time*1.5+i)*0.08;
         r.scale.set(s,1,s);
@@ -2010,9 +2076,7 @@ function createBuildGrid(d){
     const startZ=d.z-82;
 
     for(let row=0;row<rows;row++){
-
         for(let col=0;col<columns;col++){
-
             const x=startX+col*spacing;
             const z=startZ+row*spacing;
 
@@ -2028,9 +2092,12 @@ function createBuildGrid(d){
                 row,
                 col,
                 x,
-                z
+                z,
+                borderMesh:null
             };
 
+            // Keep translucent build overlays hidden in the full-city view.
+            tile.visible=false;
             buildTiles.push(tile);
 
             const border=addMesh(
@@ -2046,6 +2113,8 @@ function createBuildGrid(d){
             );
 
             border.userData.decorative=true;
+            border.visible=false;
+            tile.userData.borderMesh=border;
         }
     }
 }
@@ -2362,6 +2431,10 @@ function goToCityOverview(){
     const overviewHeight=Math.max(fitForWidth,fitForDepth)*1.24;
 
     isCityOverview=true;
+    buildTiles.forEach(tile=>{
+        tile.visible=false;
+        if(tile.userData.borderMesh) tile.userData.borderMesh.visible=false;
+    });
     controls.target.set(worldCenterX,0,worldCenterZ);
     camera.position.set(
         worldCenterX+overviewHeight*0.012,
@@ -2387,6 +2460,11 @@ function goToDistrict(id){
 
     currentDistrict=id;
     isCityOverview=false;
+    buildTiles.forEach(tile=>{
+        const active=tile.userData.district===id;
+        tile.visible=active;
+        if(tile.userData.borderMesh) tile.userData.borderMesh.visible=active;
+    });
 
     controls.target.set(d.x,0,d.z);
 
