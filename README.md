@@ -19,6 +19,20 @@ EcoQuest is a Three.js city-building environmental simulation with a FastAPI flo
 
 The model predicts its historical binary training target from an explicitly supplied feature vector. It is **not** a real-time flood forecast. The existing map's precomputed susceptibility scores and quantile-based map thresholds are separate from the binary model probability and must not be treated as interchangeable.
 
+## Dynamic environmental consequences
+
+Player-built structures now affect derived city conditions through a transparent game-balance model:
+
+- **Factories:** add ongoing industry pressure and increase effective pollution.
+- **Houses, apartments and factories:** add impervious-surface pressure, which increases simulated runoff and slightly reduces effective green coverage.
+- **Trees and gardens:** add infiltration capacity, offsetting some built-surface runoff.
+- **Rainfall, effective greenery, drainage and runoff:** combine to calculate the local simulated flood-risk score.
+- **Selected Upazila:** the existing historical susceptibility layer continues to apply its game modifier after local conditions are calculated.
+
+The HUD displays effective pollution, effective green coverage, industry pressure and runoff pressure. The Environmental Assistant uses the same calculation and explains the contributing flood-risk factors. Mission objectives use effective green and pollution values.
+
+These are explicit gameplay weights, not measured environmental quantities or a validated real-world flood prediction. Run the automated calculation tests with `npm test`.
+
 ## Environmental challenge system
 
 The game includes three sequential, state-based missions:
