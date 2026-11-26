@@ -1495,7 +1495,7 @@ function createRiverRibbon(curve,halfWidth,segments=420){
     [leftBank,rightBank].forEach(points=>{
         const bankCurve=new THREE.CatmullRomCurve3(points);
         const bank=new THREE.Mesh(
-            new THREE.TubeGeometry(bankCurve,segments,5,7,false),
+            new THREE.TubeGeometry(bankCurve,segments,3,7,false),
             bankMaterial
         );
         bank.position.y=0.08;
@@ -1548,7 +1548,7 @@ function createRiverBridge(x,z,axis,span){
     [-1,1].forEach(side=>{
         const ramp=addBox(
             axis==='x'?x+side*(span/2+approachLength/2):x,
-            deckHeight/2,
+            deckHeight/2-0.36,
             axis==='z'?z+side*(span/2+approachLength/2):z,
             axis==='x'?approachLength:bridgeWidth,
             0.72,
