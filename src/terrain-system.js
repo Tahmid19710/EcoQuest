@@ -105,7 +105,11 @@ function createGrassGeometry() {
 // Keep roads and central buildable areas clear
 // ======================================================
 
-function isSafePosition(district, x, z) {
+function isSafePosition(district, x, z, isWaterPosition) {
+    if (isWaterPosition && isWaterPosition(x, z)) {
+        return false;
+    }
+
     const localX = x - district.x;
     const localZ = z - district.z;
 
@@ -196,7 +200,7 @@ function isSafePosition(district, x, z) {
 // CREATE VALID RANDOM POINTS
 // ======================================================
 
-function createPoints(district, count, random) {
+function createPoints(district, count, random, isWaterPosition) {
     const points = [];
 
     let attempts = 0;
@@ -211,7 +215,7 @@ function createPoints(district, count, random) {
         const z =
             district.z + (random() - 0.5) * (DISTRICT_SIZE - 45);
 
-        if (!isSafePosition(district, x, z)) {
+        if (!isSafePosition(district, x, z, isWaterPosition)) {
             continue;
         }
 
@@ -225,10 +229,10 @@ function createPoints(district, count, random) {
 // INSTANCED GRASS
 // ======================================================
 
-function createGrass(scene, district, random) {
+function createGrass(scene, district, random, isWaterPosition) {
     const count = SETTINGS.grassDensity[district.type] || 100;
 
-    const points = createPoints(district, count, random);
+    const points = createPoints(district, count, random, isWaterPosition);
 
     if (!points.length) return null;
 
@@ -307,10 +311,10 @@ function createGrass(scene, district, random) {
 // INSTANCED NATURAL SHRUBS
 // ======================================================
 
-function createShrubs(scene, district, random) {
+function createShrubs(scene, district, random, isWaterPosition) {
     const count = SETTINGS.bushDensity[district.type] || 5;
 
-    const points = createPoints(district, count, random);
+    const points = createPoints(district, count, random, isWaterPosition);
 
     if (!points.length) return null;
 
@@ -387,10 +391,10 @@ function createShrubs(scene, district, random) {
 // SCATTERED ROCKS
 // ======================================================
 
-function createRocks(scene, district, random) {
+function createRocks(scene, district, random, isWaterPosition) {
     const count = SETTINGS.rockDensity[district.type] || 3;
 
-    const points = createPoints(district, count, random);
+    const points = createPoints(district, count, random, isWaterPosition);
 
     if (!points.length) return null;
 
@@ -467,7 +471,7 @@ function createRocks(scene, district, random) {
 // PUBLIC FUNCTION — ADD VEGETATION TO ALL DISTRICTS
 // ======================================================
 
-export function createNaturalTerrain(scene, districts) {
+export function createNaturalTerrain(scene, districts, isWaterPosition = null) {
     if (!SETTINGS.enabled) {
         return { dispose() {} };
     }
@@ -477,9 +481,9 @@ export function createNaturalTerrain(scene, districts) {
     districts.forEach((district, index) => {
         const random = seededRandom(2026 + index * 7919);
 
-        const grass = createGrass(scene, district, random);
-        const bushes = createShrubs(scene, district, random);
-        const rocks = createRocks(scene, district, random);
+        const grass = createGrass(scene, district, random, isWaterPosition);
+        const bushes = createShrubs(scene, district, random, isWaterPosition);
+        const rocks = createRocks(scene, district, random, isWaterPosition);
 
         if (grass) objects.push(grass);
         if (bushes) objects.push(bushes);

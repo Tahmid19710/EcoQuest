@@ -232,6 +232,10 @@ let floodTargetLevel = 0;
 
 let waterSurfaces = [];
 let waterRipples = [];
+let riverCenterline = [];
+let lakeAreas = [];
+let roadSegments = [];
+let roadsideLampSequence = 0;
 
 let materials = {};
 let hud = {};
@@ -258,22 +262,37 @@ body{
 
 button{font-family:inherit}
 
+html,body,#app{
+ width:100%;
+ height:100%;
+ min-height:100%;
+ margin:0;
+}
+body{overflow:hidden}
 .eco-shell{
  width:100%;
- max-width:1800px;
- margin:auto;
- padding:8px;
+ height:100dvh;
+ max-width:none;
+ margin:0;
+ padding:0;
+ overflow:hidden;
 }
-
 .game-interface{
+ width:100%;
+ height:100%;
+ min-height:0;
+ display:flex;
+ flex-direction:column;
  overflow:hidden;
  border:1px solid #3c6246;
- border-radius:13px;
+ border-radius:0;
  background:#15271c;
  box-shadow:0 18px 50px #0008;
 }
 
 .top-hud{
+ position:relative;
+ flex:0 0 auto;
  display:flex;
  justify-content:space-between;
  align-items:center;
@@ -293,6 +312,24 @@ button{font-family:inherit}
 
 .brand h1{margin:5px 0;font-size:25px}
 .brand p{margin:0;font-size:10px;color:#b7cbb8}
+
+.stats-toggle{
+ flex:0 0 auto;
+ padding:8px 11px;
+ border:1px solid #83b47d;
+ border-radius:7px;
+ background:#284a31;
+ color:#eaf8e5;
+ font-size:10px;
+ font-weight:900;
+ cursor:pointer;
+ touch-action:manipulation;
+}
+.top-hud.stats-collapsed{
+ padding-top:8px;
+ padding-bottom:8px;
+}
+.top-hud.stats-collapsed .stats-strip{display:none}
 
 .stats-strip{
  display:grid;
@@ -321,6 +358,7 @@ button{font-family:inherit}
 .stat.danger strong{color:#ff7777}
 
 .navigation,.toolbar{
+ flex:0 0 auto;
  display:flex;
  align-items:center;
  gap:6px;
@@ -381,12 +419,28 @@ button{font-family:inherit}
  color:#a4eca7;
 }
 
+.toolbar{
+ max-height:112px;
+ flex-wrap:nowrap;
+ overflow-x:auto;
+ overflow-y:hidden;
+ overscroll-behavior-x:contain;
+}
 .game-stage{
  position:relative;
- height:min(76vh,900px);
- min-height:470px;
+ flex:1 1 auto;
+ width:100%;
+ height:auto;
+ min-height:0;
  overflow:hidden;
  background:#81996a;
+}
+.stats-toggle-floating{
+ position:absolute;
+ left:12px;
+ bottom:12px;
+ z-index:14;
+ box-shadow:0 4px 14px #0006;
 }
 
 #city-game{width:100%;height:100%}
@@ -518,12 +572,13 @@ button{font-family:inherit}
 
 @media(max-width:700px), (pointer:coarse){
  .mobile-joystick{display:block}
+ .stats-toggle-floating{display:none}
  .movement-hint{
   display:block;left:132px;bottom:20px;
   max-width:calc(100% - 148px);
   padding:7px 8px;font-size:8px;line-height:1.4;
  }
- .game-stage{height:min(78svh,820px);min-height:480px}
+ .game-stage{height:auto;min-height:0;flex:1 1 auto}
  .zone-selector{width:min(215px,calc(100% - 24px));padding:7px}
  .zone-selector label{font-size:8px}
  .zone-selector select{font-size:10px;padding:8px}
@@ -538,9 +593,9 @@ button{font-family:inherit}
 }
 @media(max-width:550px){
  .stats-strip{grid-template-columns:repeat(2,minmax(0,1fr))}
- .eco-shell{padding:2px}
+ .eco-shell{padding:0}
  .brand{width:100%}
- .game-stage{height:72svh;min-height:500px}
+ .game-stage{height:auto;min-height:0;flex:1 1 auto}
  .zone-selector{width:min(205px,calc(100% - 24px))}
  .zone-selector select{font-size:10px;padding:8px}
  .game-alert{top:82px;font-size:9px}
@@ -549,7 +604,7 @@ button{font-family:inherit}
  .mobile-joystick-knob{width:46px;height:46px}
 }
 @media(max-height:500px) and (orientation:landscape){
- .game-stage{height:86svh;min-height:320px}
+ .game-stage{height:auto;min-height:0;flex:1 1 auto}
  .mobile-joystick{width:94px;height:94px;left:12px;bottom:12px}
  .mobile-joystick-knob{width:40px;height:40px}
  .camera-controls{top:108px}
@@ -573,7 +628,10 @@ app.innerHTML = `
     <p>Explore. Build. Protect your city.</p>
    </div>
 
-   <div class="stats-strip">
+   <button class="stats-toggle" id="stats-toggle-top" type="button"
+    aria-expanded="true" aria-controls="city-stats">Hide stats ▴</button>
+
+   <div class="stats-strip" id="city-stats">
     <div class="stat"><span>💰 Credits</span><strong id="credits">500</strong></div>
     <div class="stat"><span>🏭 Pollution</span><strong id="pollution">38%</strong></div>
     <div class="stat"><span>😊 Happiness</span><strong id="happiness">65%</strong></div>
@@ -595,40 +653,12 @@ app.innerHTML = `
    </span>
   </nav>
 
-  <nav class="toolbar">
-   <span class="bar-label">BUILD</span>
 
-   <button class="tool-btn active" data-tool="oak"><span>🌳 Oak Tree</span><small>8 Credits</small></button>
-   <button class="tool-btn" data-tool="pine"><span>🌲 Pine Tree</span><small>10 Credits</small></button>
-   <button class="tool-btn" data-tool="blossom"><span>🌸 Blossom</span><small>12 Credits</small></button>
-   <button class="tool-btn" data-tool="flower"><span>🌺 Garden</span><small>5 Credits</small></button>
-   <button class="tool-btn" data-tool="house"><span>🏠 House</span><small>45 Credits</small></button>
-   <button class="tool-btn" data-tool="apartment"><span>🏢 Apartment</span><small>80 Credits</small></button>
-   <button class="tool-btn" data-tool="factory"><span>🏭 Factory</span><small>100 Credits</small></button>
-   <button class="tool-btn" data-tool="bench"><span>🪑 Bench</span><small>15 Credits</small></button>
-   <button class="tool-btn" data-tool="solar"><span>☀️ Solar</span><small>25 Credits</small></button>
-   <button class="tool-btn" data-tool="lamp"><span>💡 Lamp</span><small>18 Credits</small></button>
-   <button class="tool-btn" data-tool="remove"><span>🗑️ Remove</span><small>Refund 50%</small></button>
-
-   <span class="bar-label">WEATHER</span>
-
-   <button class="action-btn blue" data-action="rain">🌧️ Rain</button>
-   <button class="action-btn" data-action="clear">☀️ Clear</button>
-   <button class="action-btn orange" data-action="drainage">🚰 Drainage</button>
-   <button class="action-btn" data-action="clean">♻️ Cleanup</button>
-   <button class="action-btn" data-action="save">💾 Save</button>
-   <button class="action-btn" data-action="load">📂 Load</button>
-   <button class="action-btn red" data-action="reset">↻ Reset</button>
-
-   <button class="action-btn" id="ml-map-open-btn" type="button">
-    ML FLOOD MAP
-   </button>
-
-   <span id="selected-tool">Selected: Oak Tree</span>
-  </nav>
 
   <section class="game-stage">
    <div class="stage-location" id="location-label">ZONE 11 · 🌳 Central Park 01</div>
+   <button class="stats-toggle stats-toggle-floating" id="stats-toggle-bottom"
+    type="button" aria-expanded="true" aria-controls="city-stats">Hide stats ▴</button>
    <div class="zone-selector">
     <label for="zone-select">🗺️ SELECT A ZONE · 70 AVAILABLE</label>
     <select id="zone-select">
@@ -661,6 +691,38 @@ app.innerHTML = `
 
    <div id="city-game"></div>
   </section>
+
+  <nav class="toolbar">
+   <span class="bar-label">BUILD</span>
+
+   <button class="tool-btn active" data-tool="oak"><span>🌳 Oak Tree</span><small>8 Credits</small></button>
+   <button class="tool-btn" data-tool="pine"><span>🌲 Pine Tree</span><small>10 Credits</small></button>
+   <button class="tool-btn" data-tool="blossom"><span>🌸 Blossom</span><small>12 Credits</small></button>
+   <button class="tool-btn" data-tool="flower"><span>🌺 Garden</span><small>5 Credits</small></button>
+   <button class="tool-btn" data-tool="house"><span>🏠 House</span><small>45 Credits</small></button>
+   <button class="tool-btn" data-tool="apartment"><span>🏢 Apartment</span><small>80 Credits</small></button>
+   <button class="tool-btn" data-tool="factory"><span>🏭 Factory</span><small>100 Credits</small></button>
+   <button class="tool-btn" data-tool="bench"><span>🪑 Bench</span><small>15 Credits</small></button>
+   <button class="tool-btn" data-tool="solar"><span>☀️ Solar</span><small>25 Credits</small></button>
+   <button class="tool-btn" data-tool="lamp"><span>💡 Lamp</span><small>18 Credits</small></button>
+   <button class="tool-btn" data-tool="remove"><span>🗑️ Remove</span><small>Refund 50%</small></button>
+
+   <span class="bar-label">WEATHER</span>
+
+   <button class="action-btn blue" data-action="rain">🌧️ Rain</button>
+   <button class="action-btn" data-action="clear">☀️ Clear</button>
+   <button class="action-btn orange" data-action="drainage">🚰 Drainage</button>
+   <button class="action-btn" data-action="clean">♻️ Cleanup</button>
+   <button class="action-btn" data-action="save">💾 Save</button>
+   <button class="action-btn" data-action="load">📂 Load</button>
+   <button class="action-btn red" data-action="reset">↻ Reset</button>
+
+   <button class="action-btn" id="ml-map-open-btn" type="button">
+    ML FLOOD MAP
+   </button>
+
+   <span id="selected-tool">Selected: Oak Tree</span>
+  </nav>
 
   <footer class="game-footer">
    <div id="status">Loading EcoQuest...</div>
@@ -857,6 +919,8 @@ function createAsset(type,x,z){
 
 function createTree(x,z,type='oak',scale=1){
 
+    if(isWaterPosition(x,z,5)) return null;
+
     const asset=createAsset(type,x,z);
 
     if(asset) return asset;
@@ -917,6 +981,8 @@ function createTree(x,z,type='oak',scale=1){
 
 function createHouseModel(x,z,color=0xc7b69c,scale=1){
 
+    if(isWaterPosition(x,z,24)) return null;
+
     const asset=createAsset('house',x,z);
 
     if(asset) return asset;
@@ -959,6 +1025,8 @@ function createHouseModel(x,z,color=0xc7b69c,scale=1){
 
 function createApartmentModel(x,z,height=38,color=0x82969a){
 
+    if(isWaterPosition(x,z,30)) return null;
+
     const asset=createAsset('apartment',x,z);
 
     if(asset) return asset;
@@ -994,6 +1062,8 @@ function createApartmentModel(x,z,height=38,color=0x82969a){
 
 function createFactoryModel(x,z){
 
+    if(isWaterPosition(x,z,38)) return null;
+
     const asset=createAsset('factory',x,z);
 
     if(asset) return asset;
@@ -1027,6 +1097,8 @@ function createFactoryModel(x,z){
 // ============================================================
 
 function createFlower(x,z,color=0xe7a5bc,parent=scene){
+
+    if(isWaterPosition(x,z,3)) return null;
 
     const group=new THREE.Group();
 
@@ -1088,6 +1160,8 @@ function createFlowerGarden(x,z){
 
 function createBench(x,z){
 
+    if(isWaterPosition(x,z,5)) return null;
+
     const group=new THREE.Group();
 
     addBox(0,1,0,9,1,2.4,createMaterial(0x84552f),group);
@@ -1108,6 +1182,8 @@ function createBench(x,z){
 // ============================================================
 
 function createSolarPanel(x,z){
+
+    if(isWaterPosition(x,z,8)) return null;
 
     const group=new THREE.Group();
 
@@ -1144,6 +1220,8 @@ function createSolarPanel(x,z){
 // ============================================================
 
 function createStreetLamp(x,z){
+
+    if(isWaterPosition(x,z,4)) return null;
 
     const group=new THREE.Group();
 
@@ -1194,6 +1272,7 @@ function createRoad(x, z, length, width, vertical = false) {
     road.castShadow = false;
     road.receiveShadow = false;
     road.renderOrder = 2;
+    roadSegments.push({x,z,length,width,vertical});
 
     const white = makeMarkingMaterial(0xe6e6dc);
     const yellow = makeMarkingMaterial(0xe8c65e);
@@ -1338,7 +1417,12 @@ function buildRoadNetwork(){
         createRoad(centerX,z,ZONE_COLUMNS*ZONE_SPACING-100,CONFIG.roadWidth);
     }
 
-    districts.forEach(d=>createRoad(d.x,d.z+235,650,22));
+    districts.forEach(d=>{
+        const localRoadZ=d.z+235;
+        if(!roadSegmentCrossesRiver('x',localRoadZ,d.x-325,d.x+325,22)){
+            createRoad(d.x,localRoadZ,650,22);
+        }
+    });
 
     createCrosswalk(-450,-250,true);
     createCrosswalk(350,550,true);
@@ -1550,9 +1634,56 @@ function createRiver(x,z){
 
 function createLake(x,z){
 
+    if(isWaterPosition(x,z,10)) return null;
+
     const lake=addPlane(x,0.14,z,145,100,materials.water);
     lake.userData.baseY=0.14;
     waterSurfaces.push(lake);
+    lakeAreas.push({x,z,rx:72.5,rz:50});
+    return lake;
+}
+
+function distanceToSegmentSquaredXZ(px,pz,a,b){
+    const dx=b.x-a.x;
+    const dz=b.z-a.z;
+    const lengthSquared=dx*dx+dz*dz;
+    if(lengthSquared===0) return (px-a.x)**2+(pz-a.z)**2;
+
+    const t=THREE.MathUtils.clamp(
+        ((px-a.x)*dx+(pz-a.z)*dz)/lengthSquared,
+        0,1
+    );
+    const nearestX=a.x+t*dx;
+    const nearestZ=a.z+t*dz;
+    return (px-nearestX)**2+(pz-nearestZ)**2;
+}
+
+function isWaterPosition(x,z,clearance=0){
+    const riverRadius=76+clearance;
+    const riverRadiusSquared=riverRadius*riverRadius;
+
+    for(let i=0;i<riverCenterline.length-1;i++){
+        if(distanceToSegmentSquaredXZ(
+            x,z,riverCenterline[i],riverCenterline[i+1]
+        )<=riverRadiusSquared){
+            return true;
+        }
+    }
+
+    return lakeAreas.some(area=>{
+        const rx=area.rx+clearance;
+        const rz=area.rz+clearance;
+        return ((x-area.x)/rx)**2+((z-area.z)/rz)**2<=1;
+    });
+}
+
+function roadSegmentCrossesRiver(axis,fixed,min,max,roadWidth){
+    const clearance=76+roadWidth/2+5;
+    return riverCenterline.some(point=>{
+        const along=axis==='x'?point.x:point.z;
+        const across=axis==='x'?point.z:point.x;
+        return along>=min&&along<=max&&Math.abs(across-fixed)<=clearance;
+    });
 }
 
 function createRiverRibbon(curve,halfWidth,segments=420){
@@ -1704,6 +1835,7 @@ function buildCityRiver(){
         {length:sampleCount+1},
         (_,i)=>curve.getPointAt(i/sampleCount)
     );
+    riverCenterline=samples;
     const candidates=[];
 
     const addRoadCrossings=(roadAxis,fixed,min,max,local=false,roadWidth=CONFIG.roadWidth)=>{
@@ -1767,9 +1899,8 @@ function buildCityRiver(){
         addRoadCrossings('x',z,minX,maxX,false,CONFIG.roadWidth);
     }
 
-    districts.forEach(d=>{
-        addRoadCrossings('x',d.z+235,d.x-325,d.x+325,true,22);
-    });
+    // Local collector roads that would cross the river are omitted.
+    // Only the connected arterial roads receive bridge decks.
 
     candidates.sort((a,b)=>
         a.priority-b.priority ||
@@ -1862,6 +1993,12 @@ function takeZoneSlots(slots,count,random){
 
 function buildForest(d){
     const random=createZoneRandom(d,11);
+    const pondSide=random()<0.5?-1:1;
+    createLake(
+        d.x+pondSide*(155+random()*55),
+        d.z+(random()-0.5)*170
+    );
+
     const treeCount=22+Math.floor(random()*21);
     const treeTypes=['oak','oak','pine','blossom'];
 
@@ -1875,12 +2012,6 @@ function buildForest(d){
             0.72+random()*0.72
         );
     }
-
-    const pondSide=random()<0.5?-1:1;
-    createLake(
-        d.x+pondSide*(155+random()*55),
-        d.z+(random()-0.5)*170
-    );
 
     if(random()>0.22){
         createHouseModel(
@@ -2102,6 +2233,8 @@ function buildFarm(d){
     const random=createZoneRandom(d,79);
     const barnX=d.x+(random()<0.5?-1:1)*(205+random()*30);
     const barnZ=d.z-185+random()*45;
+    if(isWaterPosition(barnX,barnZ,36)) return;
+
     const barn=new THREE.Group();
     barn.position.set(barnX,0,barnZ);
 
@@ -2136,10 +2269,12 @@ function buildFarm(d){
         );
 
         for(let col=0;col<columns;col++){
+            const cropX=fieldStartX+col*22;
+            if(isWaterPosition(cropX,z,3)) continue;
             addMesh(
                 cropGeometry,
                 cropMaterials[(row+col+d.zoneNo)%cropMaterials.length],
-                fieldStartX+col*22,
+                cropX,
                 2,
                 z
             );
@@ -2183,6 +2318,7 @@ function createBuildGrid(d){
                 col,
                 x,
                 z,
+                waterBlocked:isWaterPosition(x,z,30),
                 borderMesh:null
             };
             tile.visible=false;
@@ -2329,6 +2465,11 @@ function getZoneDesignScore(zoneId){
 
 function placeObject(tile){
 
+    if(tile.userData.waterBlocked||isWaterPosition(tile.x,tile.z,30)){
+        message('This build tile is inside a water channel or lake. Choose dry land.');
+        return;
+    }
+
     const existing=findOccupiedTile(tile);
 
     if(selectedTool==='remove'){
@@ -2413,6 +2554,102 @@ function placeObject(tile){
     );
 }
 
+function findNearestRoadsidePosition(x,z){
+    let best=null;
+
+    roadSegments.forEach((road,index)=>{
+        let px,pz,lateralDistance;
+
+        if(road.vertical){
+            const along=THREE.MathUtils.clamp(
+                z,road.z-road.length/2+14,road.z+road.length/2-14
+            );
+            const side=x>=road.x?1:-1;
+            px=road.x+side*(road.width/2+11);
+            pz=along;
+            lateralDistance=Math.abs(x-road.x);
+        }else{
+            const along=THREE.MathUtils.clamp(
+                x,road.x-road.length/2+14,road.x+road.length/2-14
+            );
+            const side=z>=road.z?1:-1;
+            px=along;
+            pz=road.z+side*(road.width/2+11);
+            lateralDistance=Math.abs(z-road.z);
+        }
+
+        if(lateralDistance>road.width/2+58) return;
+        if(isWaterPosition(px,pz,5)) return;
+
+        const distance=Math.hypot(x-px,z-pz);
+        if(!best||distance<best.distance){
+            best={x:px,z:pz,distance,roadIndex:index};
+        }
+    });
+
+    return best;
+}
+
+function placeRoadsideLamp(x,z){
+    const spot=findNearestRoadsidePosition(x,z);
+    if(!spot){
+        message('Tap close to a dry road edge to place a street lamp.');
+        return;
+    }
+
+    const alreadyPlaced=placedItems.some(item=>
+        item.type==='lamp'&&Math.hypot(item.x-spot.x,item.z-spot.z)<32
+    );
+    if(alreadyPlaced){
+        message('A street lamp is already placed at this roadside position.');
+        return;
+    }
+
+    const data=tools.lamp;
+    if(stats.credits<data.cost){
+        message('Not enough credits! You need '+data.cost+' credits.');
+        return;
+    }
+
+    const object=createStreetLamp(spot.x,spot.z);
+    if(!object){
+        message('Street lamp cannot be placed on water.');
+        return;
+    }
+
+    const nearestDistrict=districts.reduce((closest,district)=>{
+        const distance=(district.x-spot.x)**2+(district.z-spot.z)**2;
+        return !closest||distance<closest.distance
+            ?{id:district.id,distance}
+            :closest;
+    },null);
+
+    stats.credits-=data.cost;
+    const beforeBuild={...stats};
+    const afterBuild=applyBuildEffects(stats,data,1);
+    const effects={};
+    ['green','happiness','pollution','energy','waste'].forEach(key=>{
+        effects[key]=afterBuild[key]-beforeBuild[key];
+    });
+    Object.assign(stats,afterBuild);
+
+    placedItems.push({
+        district:nearestDistrict.id,
+        row:-1,
+        col:++roadsideLampSequence,
+        x:spot.x,
+        z:spot.z,
+        type:'lamp',
+        cost:data.cost,
+        effects,
+        roadside:true,
+        object
+    });
+
+    updateEnvironment();
+    message('Street lamp installed on the roadside.');
+}
+
 function disposeObject(object){
 
     if(object.userData?.ecoquestAsset) return;
@@ -2470,6 +2707,39 @@ function setupInteraction(){
         pointer.y=-((e.clientY-rect.top)/rect.height)*2+1;
 
         raycaster.setFromCamera(pointer,camera);
+
+        if(selectedTool==='lamp'){
+            const groundPlane=new THREE.Plane(
+                new THREE.Vector3(0,1,0),0
+            );
+            const groundPoint=new THREE.Vector3();
+            if(raycaster.ray.intersectPlane(groundPlane,groundPoint)){
+                placeRoadsideLamp(groundPoint.x,groundPoint.z);
+            }
+            return;
+        }
+
+        if(selectedTool==='remove'){
+            const roadside=placedItems.filter(item=>item.roadside);
+            const lampHits=raycaster.intersectObjects(
+                roadside.map(item=>item.object),true
+            );
+            if(lampHits.length){
+                let hitObject=lampHits[0].object;
+                const item=roadside.find(candidate=>{
+                    let node=hitObject;
+                    while(node){
+                        if(node===candidate.object) return true;
+                        node=node.parent;
+                    }
+                    return false;
+                });
+                if(item){
+                    removeObject(item);
+                    return;
+                }
+            }
+        }
 
         const hits=raycaster.intersectObjects(buildTiles,false);
 
@@ -2554,7 +2824,7 @@ function goToDistrict(id){
     currentDistrict=id;
     isCityOverview=false;
     buildTiles.forEach(tile=>{
-        const active=tile.userData.district===id;
+        const active=tile.userData.district===id&&!tile.userData.waterBlocked;
         tile.visible=active;
         if(tile.userData.borderMesh) tile.userData.borderMesh.visible=active;
     });
@@ -3158,7 +3428,8 @@ function saveGame(){
                 z:item.z,
                 type:item.type,
                 cost:item.cost,
-                effects:item.effects || null
+                effects:item.effects || null,
+                roadside:item.roadside || false
             })),
             missions: missionSystem ? missionSystem.getSaveData() : null,
             currentDistrict
@@ -3352,7 +3623,36 @@ function setupCameraButtons(){
 // 36. INTERFACE EVENTS
 // ============================================================
 
+function setupStatsControls(){
+    const header=document.querySelector('.top-hud');
+    const topButton=document.getElementById('stats-toggle-top');
+    const bottomButton=document.getElementById('stats-toggle-bottom');
+    if(!header||!topButton) return;
+
+    let collapsed=IS_TOUCH_DEVICE;
+
+    const render=()=>{
+        header.classList.toggle('stats-collapsed',collapsed);
+        const label=collapsed?'Show stats ▾':'Hide stats ▴';
+        [topButton,bottomButton].filter(Boolean).forEach(button=>{
+            button.textContent=label;
+            button.setAttribute('aria-expanded',String(!collapsed));
+        });
+    };
+
+    const toggle=()=>{
+        collapsed=!collapsed;
+        render();
+    };
+
+    topButton.addEventListener('click',toggle);
+    if(bottomButton) bottomButton.addEventListener('click',toggle);
+    render();
+}
+
 function setupInterfaceEvents(){
+
+    setupStatsControls();
 
     // Receive selected Upazila from the ML map.
     setMLMapSelectionHandler((properties) => {
@@ -3656,21 +3956,32 @@ async function initializeGame(){
             materials.grass
         );
 
-        // Generate the road grid and all 70 zones.
+        // Create the winding river first so every later system can avoid water.
+        buildCityRiver();
+
+        // Main arterial roads are retained and bridged at every river crossing.
+        // Local collector roads are omitted only where they would run through water.
         buildRoadNetwork();
         buildDistricts();
 
-        // Add procedural vegetation.
-        createNaturalTerrain(scene,districts);
+        // Procedural terrain uses the same river/lake exclusion as buildings.
+        createNaturalTerrain(
+            scene,
+            districts,
+            (x,z)=>isWaterPosition(x,z,8)
+        );
 
-        // One winding river crosses the city; bridges are placed at road crossings.
-        buildCityRiver();
-
-        // Street furniture.
+        // Street lamps sit beside dry local roads, never in the river.
         districts.forEach(d=>{
+            const hasLocalRoad=roadSegments.some(road=>
+                !road.vertical&&
+                Math.abs(road.x-d.x)<1&&
+                Math.abs(road.z-(d.z+235))<1
+            );
+
+            if(!hasLocalRoad) return;
 
             for(let i=0;i<4;i++){
-
                 createStreetLamp(
                     d.x-270+i*180,
                     d.z+210
@@ -3728,10 +4039,6 @@ async function initializeGame(){
             camera.updateProjectionMatrix();
 
             renderer.setSize(width,height);
-
-            if(isCityOverview&&controls){
-                goToCityOverview();
-            }
         });
 
         resizeObserver.observe(container);
