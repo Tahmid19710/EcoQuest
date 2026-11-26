@@ -7,6 +7,7 @@ import { createLightingSystem } from './lighting-system.js';
 import { createEnvironmentAssistant } from './environment-assistant.js';
 import { createMissionSystem } from './mission-system.js';
 import { calculateEnvironmentalConsequences } from './environmental-consequences.js';
+import { applyBuildEffects, getCitySustainabilityScore } from './city-economy.js';
 import {
     makeRoadMaterial,
     makeConcreteMaterial,
@@ -1583,27 +1584,7 @@ function placeObject(tile){
 
     stats.credits-=data.cost;
 
-    stats.green=THREE.MathUtils.clamp(
-        stats.green+data.green,0,100
-    );
-
-    stats.happiness=THREE.MathUtils.clamp(
-        stats.happiness+data.happiness,0,100
-    );
-
-    stats.pollution=THREE.MathUtils.clamp(
-        stats.pollution+data.pollution,0,100
-    );
-
-    // Energy is a balance: solar adds supply, while buildings
-    // and street lighting add demand. Construction also generates waste.
-    stats.energy=THREE.MathUtils.clamp(
-        stats.energy+(data.energy || 0),0,100
-    );
-
-    stats.waste=THREE.MathUtils.clamp(
-        stats.waste+(data.waste || 0),0,100
-    );
+    Object.assign(stats, applyBuildEffects(stats, data, 1));
 
     placedItems.push({
         district:tile.district,
@@ -1643,25 +1624,7 @@ function removeObject(item){
 
     stats.credits+=Math.floor(item.cost*0.5);
 
-    stats.green=THREE.MathUtils.clamp(
-        stats.green-data.green,0,100
-    );
-
-    stats.happiness=THREE.MathUtils.clamp(
-        stats.happiness-data.happiness,0,100
-    );
-
-    stats.pollution=THREE.MathUtils.clamp(
-        stats.pollution-data.pollution,0,100
-    );
-
-    stats.energy=THREE.MathUtils.clamp(
-        stats.energy-(data.energy || 0),0,100
-    );
-
-    stats.waste=THREE.MathUtils.clamp(
-        stats.waste-(data.waste || 0),0,100
-    );
+    Object.assign(stats, applyBuildEffects(stats, data, -1));
 
     updateEnvironment();
 
@@ -2211,13 +2174,7 @@ function cleanCity(){
 
 function updateEconomy(){
 
-    const score=(
-        (stats.effectiveGreen ?? stats.green)+
-        stats.happiness+
-        (100-(stats.effectivePollution ?? stats.pollution))+
-        stats.energy+
-        (100-stats.waste)
-    )/5;
+    const score = getCitySustainabilityScore(stats);
 
     if(score>=60) stats.credits+=2;
 
