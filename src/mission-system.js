@@ -58,18 +58,20 @@ const MISSIONS = [
         reward: 75,
         objectives: [
             {
-                label: 'Increase rainfall',
+                label: 'Reach rainfall level',
                 key: 'rainfall',
-                unit: 'pts',
+                unit: '%',
                 target: 25,
-                measure: (current, start) => current.rainfall - start.rainfall
+                measure: current => current.rainfall,
+                isComplete: current => current.rainfall >= 25
             },
             {
-                label: 'Improve drainage',
+                label: 'Reach drainage level',
                 key: 'drainage',
-                unit: 'pts',
-                target: 15,
-                measure: (current, start) => current.drainage - start.drainage
+                unit: '%',
+                target: 70,
+                measure: current => current.drainage,
+                isComplete: current => current.drainage >= 70
             }
         ]
     },
@@ -83,18 +85,22 @@ const MISSIONS = [
         reward: 60,
         objectives: [
             {
-                label: 'Reduce pollution',
+                label: 'Bring pollution to 30% or lower',
                 key: 'pollution',
-                unit: 'pts',
-                target: 8,
-                measure: (current, start) => start.pollution - current.pollution
+                unit: '%',
+                target: 70,
+                measure: current => 100 - current.pollution,
+                isComplete: current => current.pollution <= 30,
+                formatProgress: current => `${Math.round(current.pollution)}% / ≤30%`
             },
             {
-                label: 'Reduce waste',
+                label: 'Bring waste to 20% or lower',
                 key: 'waste',
-                unit: 'pts',
-                target: 10,
-                measure: (current, start) => start.waste - current.waste
+                unit: '%',
+                target: 80,
+                measure: current => 100 - current.waste,
+                isComplete: current => current.waste <= 20,
+                formatProgress: current => `${Math.round(current.waste)}% / ≤20%`
             }
         ]
     }
@@ -341,7 +347,12 @@ export function createMissionSystem({
             return {
                 ...objective,
                 value,
-                complete: raw >= objective.target
+                complete: objective.isComplete
+                    ? objective.isComplete(current, baseline)
+                    : raw >= objective.target,
+                display: objective.formatProgress
+                    ? objective.formatProgress(current, baseline)
+                    : `${Math.floor(value)}/${objective.target} ${objective.unit}`
             };
         });
     }
@@ -428,7 +439,7 @@ export function createMissionSystem({
                     ${progress.map(item => `
                         <div class="eco-mission-objective ${item.complete ? 'done' : ''}">
                             <span>${item.complete ? '✓' : '○'} ${escapeHtml(item.label)}</span>
-                            <strong>${Math.floor(item.value)}/${item.target} ${escapeHtml(item.unit)}</strong>
+                            <strong>${escapeHtml(item.display)}</strong>
                         </div>
                     `).join('')}
                 </div>
@@ -523,7 +534,8 @@ export function createMissionSystem({
             ? clamp(count, 0, MISSIONS.length)
             : 0;
 
-        started = saved.started === true && completedCount < MISSIONS.length;
+        started = (saved.started === true || completedCount === 0)
+            && completedCount < MISSIONS.length;
 
         const source = saved.baseline && typeof saved.baseline === 'object'
             ? saved.baseline
