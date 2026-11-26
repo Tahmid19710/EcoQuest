@@ -2406,6 +2406,26 @@ function getPlacementRadius(type){
     return radii[type]||10;
 }
 
+function getZoneDesignScore(zoneId){
+    const items=placedItems.filter(item=>item.district===zoneId);
+    if(!items.length) return 0;
+
+    const greenery=items.filter(item=>
+        ['oak','pine','blossom','flower'].includes(item.type)
+    ).length;
+    const amenities=items.filter(item=>
+        ['bench','lamp','solar'].includes(item.type)
+    ).length;
+    const variety=new Set(items.map(item=>item.type)).size;
+
+    return Math.round(
+        Math.min(35,greenery*7)+
+        Math.min(25,variety*8)+
+        Math.min(20,amenities*10)+
+        Math.min(20,items.length*2.5)
+    );
+}
+
 function placeObjectAt(worldX,worldZ){
 
     if(isCityOverview){
