@@ -518,7 +518,11 @@ button{font-family:inherit}
 
 @media(max-width:700px), (pointer:coarse){
  .mobile-joystick{display:block}
- .movement-hint{display:none}
+ .movement-hint{
+  display:block;left:132px;bottom:20px;
+  max-width:calc(100% - 148px);
+  padding:7px 8px;font-size:8px;line-height:1.4;
+ }
  .game-stage{height:min(78svh,820px);min-height:480px}
  .zone-selector{width:min(215px,calc(100% - 24px));padding:7px}
  .zone-selector label{font-size:8px}
@@ -650,7 +654,6 @@ app.innerHTML = `
     id="mobile-joystick"
     role="group"
     aria-label="Touch movement joystick"
-    aria-hidden="true"
    >
     <div class="mobile-joystick-knob" id="mobile-joystick-knob"></div>
     <span class="mobile-joystick-label">MOVE</span>
