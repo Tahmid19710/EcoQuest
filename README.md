@@ -24,8 +24,8 @@ The model predicts its historical binary training target from an explicitly supp
 The game includes three sequential, state-based missions:
 
 1. **Green Recovery** — increase Green Score by 15 points and Happiness by 6 points through planting and green-space actions.
-2. **Flood Readiness** — increase simulated rainfall by 25 points, then improve drainage by 15 points and observe the updated flood-risk indicator.
-3. **Clean City** — reduce Pollution by 8 points and Waste by 10 points using the existing cleanup action.
+2. **Flood Readiness** — reach at least 25% simulated rainfall and 70% drainage, then observe the updated flood-risk indicator.
+3. **Clean City** — bring Pollution to 30% or lower and Waste to 20% or lower using the existing cleanup action.
 
 Each mission measures progress from the game state captured when that mission starts. Completing a mission awards in-game credits and unlocks the next challenge. Mission progress is included in the existing local save/load flow. The mission system uses the game's current simulation rules; it does not introduce a new trained AI model or claim real-world forecast accuracy.
 
